@@ -1,0 +1,45 @@
+Notes:
+"Sample file in the shape of LinkedIn's Connections.csv export. All people and companies are fictional. Most email addresses are blank because LinkedIn only includes them when a connection allows it."
+
+First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Priya,Raman,https://www.linkedin.com/in/priya-raman-3a1b2c,,Monsoon Climate Fund,Investment Associate,12 Oct 2026
+Arjun,Mehta,https://www.linkedin.com/in/arjunmehta,,Kestrel Capital,Partner,03 Sep 2026
+Neha,Kulkarni,https://www.linkedin.com/in/neha-kulkarni-fw,neha.k@example.com,Voltgrid Robotics,Firmware Lead,21 Aug 2026
+Rahul,Verma,https://www.linkedin.com/in/rahulverma-sre,,Northwind Cloud,Site Reliability Engineer,15 Jul 2026
+Sana,Qureshi,https://www.linkedin.com/in/sanaqureshi,,Lightbeam Ventures,Principal,02 Oct 2026
+Kabir,Singh,https://www.linkedin.com/in/kabir-singh-founder,,Tessellate Labs,Founder & CEO,28 Sep 2026
+Ananya,Iyer,https://www.linkedin.com/in/ananya-iyer-pm,,Greenleaf Energy,Product Manager,11 Jun 2026
+Vikram,Rao,https://www.linkedin.com/in/vikramrao-net,,Spanline Networks,Senior Network Engineer,19 Mar 2025
+Meera,Nair,https://www.linkedin.com/in/meera-nair-ds,,Saffron Health,Data Scientist,07 Jan 2026
+Rohan,Desai,https://www.linkedin.com/in/rohandesai-vc,,Banyan Seed Partners,Venture Fellow,30 Sep 2026
+Ishaan,Kapoor,https://www.linkedin.com/in/ishaan-kapoor-robotics,,Indian Institute of Science,Graduate Researcher - Robotics,14 Feb 2026
+Tanvi,Joshi,https://www.linkedin.com/in/tanvi-joshi-talent,tanvi@example.com,Brightpath Talent,Technical Recruiter,09 Aug 2026
+Aditya,Bose,https://www.linkedin.com/in/adityabose-hw,,Quanta Silicon,Hardware Design Engineer,25 May 2026
+Fatima,Sheikh,https://www.linkedin.com/in/fatima-sheikh-carbon,,Carbon Ledger,Co-founder,16 Oct 2026
+Dev,Malhotra,https://www.linkedin.com/in/dev-malhotra-analyst,,Kestrel Capital,Analyst,01 Oct 2026
+Lakshmi,Pillai,https://www.linkedin.com/in/lakshmipillai,,Northwind Cloud,Engineering Manager,22 Apr 2026
+Zoya,Khan,https://www.linkedin.com/in/zoyakhan-design,,Freelance,UX Designer,05 Dec 2025
+Siddharth,Menon,https://www.linkedin.com/in/siddharth-menon-pgc,,Pinecone Grove Capital,Managing Partner,18 Sep 2026
+Harpreet,Kaur,https://www.linkedin.com/in/harpreet-kaur-community,,Devfolio Circle,Community Lead,10 Nov 2025
+Nikhil,Agarwal,https://www.linkedin.com/in/nikhil-agarwal-embedded,,Orbital Batteries,Senior Embedded Engineer,27 Jul 2026
+Aisha,Fernandes,https://www.linkedin.com/in/aisha-fernandes-op,,Monsoon Climate Fund,Operating Partner,08 Oct 2026
+Varun,Gupta,https://www.linkedin.com/in/varungupta-sre,,Stackline,SRE II,13 Jun 2026
+Pooja,Reddy,https://www.linkedin.com/in/pooja-reddy-talent,,Tessellate Labs,Head of Talent,29 Aug 2026
+Karan,Chopra,https://www.linkedin.com/in/karanchopra-ml,,Lattice AI,ML Engineer,02 Mar 2026
+Divya,Shetty,https://www.linkedin.com/in/divya-shetty,,Saffron Health,Clinical Operations Lead,17 Jan 2025
+Manish,"Jain, CFA",https://www.linkedin.com/in/manish-jain-cfa,,Banyan Seed Partners,Investment Analyst,04 Oct 2026
+Riya,Sen 🚀,https://www.linkedin.com/in/riya-sen-builds,,Kiln Hardware Studio,Founder,20 Sep 2026
+Omar,Siddiqui,https://www.linkedin.com/in/omar-siddiqui,,Northwind Cloud,Staff Platform Engineer,12 Feb 2026
+Gaurav,Bhatia,https://www.linkedin.com/in/gaurav-bhatia-pm,,Lattice AI,Product Lead,23 Oct 2025
+Shreya,Das,https://www.linkedin.com/in/shreya-das-eee,,Voltgrid Robotics,Electronics Intern,06 Oct 2026
+Aman,Trivedi,https://www.linkedin.com/in/aman-trivedi,,Spanline Networks,Field Engineer,30 Nov 2024
+Kavya,Menon,https://www.linkedin.com/in/kavya-menon-angel,,Self-employed,Angel Investor,14 Sep 2026
+Yusuf,Ali,https://www.linkedin.com/in/yusuf-ali-cloud,,Stackline,DevOps Engineer,03 May 2026
+Nandini,Rao,https://www.linkedin.com/in/nandini-rao-climate,,Greenleaf Energy,Sustainability Analyst,26 Aug 2026
+Tarun,Sethi,https://www.linkedin.com/in/tarun-sethi,,Quanta Silicon,Director of Engineering,09 Jul 2025
+Ira,Banerjee,https://www.linkedin.com/in/ira-banerjee,,Lightbeam Ventures,Associate,11 Oct 2026
+Sameer,Kohli,https://www.linkedin.com/in/sameer-kohli,,Orbital Batteries,CTO,15 Aug 2026
+Leena,George,https://www.linkedin.com/in/leena-george-hr,,Northwind Cloud,University Recruiting Lead,24 Sep 2026
+Arjun,Mehta,https://www.linkedin.com/in/arjunmehta,,Kestrel Capital,Partner,03 Sep 2026
+,,,,,,
+Rhea,Kapadia,https://www.linkedin.com/in/rhea-kapadia,,Pinecone Grove Capital,Venture Partner - Climate,13 Oct 2026

@@ -1,0 +1,23 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6379:6379"   # FalkorDB (Redis protocol)
+      - "3000:3000"   # FalkorDB Browser: look at the graphs while you demo
+    volumes:
+      - falkordb-data:/var/lib/falkordb/data
+
+  app:
+    build: .
+    depends_on:
+      - falkordb
+    ports:
+      - "8000:8000"
+    environment:
+      FALKORDB_URL: redis://falkordb:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      CIRQL_PUBLIC_URL: ${CIRQL_PUBLIC_URL:-http://localhost:8000}
+
+volumes:
+  falkordb-data:
