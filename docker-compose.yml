@@ -15,6 +15,9 @@ services:
       - "8000:8000"
     environment:
       FALKORDB_URL: redis://falkordb:6379
+      AWS_BEARER_TOKEN_BEDROCK: ${AWS_BEARER_TOKEN_BEDROCK:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
       CONNECTIONS_PUBLIC_URL: ${CONNECTIONS_PUBLIC_URL:-http://localhost:8000}

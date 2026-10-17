@@ -7,6 +7,8 @@ import pytest
 # offline heuristic model, under their own graph prefix.
 os.environ["CONNECTIONS_GRAPH_PREFIX"] = "connectionstest"
 os.environ.pop("OPENAI_API_KEY", None)
+# Never call a real model from tests, even if AWS or OpenAI credentials are in the environment.
+os.environ["LLM_PROVIDER"] = "offline"
 os.environ["CONNECTIONS_STATIC_DIR"] = "/nonexistent"
 
 from fastapi.testclient import TestClient  # noqa: E402

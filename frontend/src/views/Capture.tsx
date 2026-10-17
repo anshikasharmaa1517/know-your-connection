@@ -13,7 +13,12 @@ type Result = {
 type Promise_ = { fact: { id: string; text: string; due: string; owner: string }; people: { id: string; name: string }[]; source: { title: string } }
 type Source = { source: { id: string; kind: string; title: string; created_at: number; text?: string }; people: number; facts: number }
 
-export function CaptureView({ llm }: { llm: boolean }) {
+// The browser's own speech recognition (Chrome, Edge, Safari). Used when the server can't transcribe.
+const SpeechRecognitionImpl: any =
+  typeof window !== 'undefined' ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : undefined
+
+export function CaptureView({ serverVoice }: { serverVoice: boolean }) {
+  const mode: 'server' | 'browser' | 'none' = serverVoice ? 'server' : SpeechRecognitionImpl ? 'browser' : 'none'
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
@@ -22,6 +27,7 @@ export function CaptureView({ llm }: { llm: boolean }) {
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const recorder = useRef<MediaRecorder | null>(null)
+  const recognizer = useRef<any>(null)
   const chunks = useRef<Blob[]>([])
   const toast = useToast()
 
@@ -54,7 +60,35 @@ export function CaptureView({ llm }: { llm: boolean }) {
     }
   }
 
+  const dictate = () => {
+    const r = new SpeechRecognitionImpl()
+    r.lang = navigator.language || 'en-US'
+    r.continuous = true
+    r.interimResults = true
+    const before = text.trim() ? text.trimEnd() + ' ' : ''
+    let finalText = ''
+    r.onresult = (e: any) => {
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript
+        if (e.results[i].isFinal) finalText += t
+        else interim += t
+      }
+      setText(before + finalText + interim)
+    }
+    r.onerror = (e: any) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Microphone access was blocked. Type the memo instead.')
+      else if (e.error !== 'aborted' && e.error !== 'no-speech') toast(`Dictation stopped (${e.error}). Type the rest.`)
+    }
+    r.onend = () => setRecording(false)
+    recognizer.current = r
+    r.start()
+    setSeconds(0)
+    setRecording(true)
+  }
+
   const start = async () => {
+    if (mode === 'browser') return dictate()
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const rec = new MediaRecorder(stream)
@@ -86,7 +120,8 @@ export function CaptureView({ llm }: { llm: boolean }) {
   }
 
   const stop = () => {
-    recorder.current?.stop()
+    if (mode === 'browser') recognizer.current?.stop()
+    else recorder.current?.stop()
     setRecording(false)
   }
 
@@ -119,18 +154,19 @@ export function CaptureView({ llm }: { llm: boolean }) {
             <>
               <span className="rec-dot" aria-hidden />
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                Recording {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+                {mode === 'browser' ? 'Listening' : 'Recording'} {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
               </span>
               <button className="btn btn-primary btn-small" onClick={stop} style={{ marginLeft: 'auto' }}>
-                Stop and save
+                {mode === 'browser' ? 'Stop' : 'Stop and save'}
               </button>
             </>
           ) : (
             <>
-              <button className="btn btn-quiet" onClick={start} disabled={busy || !llm}>
-                Record a voice memo
+              <button className="btn btn-quiet" onClick={start} disabled={busy || mode === 'none'}>
+                {mode === 'browser' ? 'Dictate a memo' : 'Record a voice memo'}
               </button>
-              {!llm && <span className="tiny faint">Voice needs an OpenAI key on the server</span>}
+              {mode === 'browser' && <span className="tiny faint">Your browser turns speech into text below. Check it, then save.</span>}
+              {mode === 'none' && <span className="tiny faint">Voice isn't available in this browser. Try Chrome, or type the memo.</span>}
             </>
           )}
         </div>

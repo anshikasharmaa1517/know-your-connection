@@ -33,7 +33,7 @@ export default function App() {
 
 function Shell() {
   const [account, setAccount] = useState(currentAccount())
-  const [me, setMe] = useState<{ user: User; llm: boolean; model: string } | null>(null)
+  const [me, setMe] = useState<{ user: User; llm: boolean; model: string; provider: string; voice: boolean } | null>(null)
   const [tab, setTab] = useState<Tab>(tabFromHash())
   const [draft, setDraft] = useState<AskDraft | null>(null)
   const [badge, setBadge] = useState(0)
@@ -107,7 +107,7 @@ function Shell() {
             }}
           />
         )}
-        {tab === 'capture' && <CaptureView llm={me.llm} />}
+        {tab === 'capture' && <CaptureView serverVoice={me.voice} />}
         {tab === 'ask' && <AskView draft={draft} clearDraft={() => setDraft(null)} me={me.user} go={go} onInbox={setBadge} />}
       </main>
 
@@ -155,7 +155,7 @@ function Shell() {
           </button>
           <p className="tiny faint">
             Model: {me.model}
-            {me.llm ? '' : '. Add OPENAI_API_KEY on the server for real extraction and ranking.'}
+            {me.provider === 'bedrock' ? ' on AWS Bedrock' : me.provider === 'openai' ? ' on OpenAI' : '. Add an AWS Bedrock or OpenAI key on the server for real extraction and ranking.'}
           </p>
         </Sheet>
       )}

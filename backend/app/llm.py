@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import types
+import typing
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -215,6 +217,8 @@ def keyword_hits(keywords: list[str], text: str) -> list[str]:
 
 class HeuristicModel:
     name = "offline-heuristics"
+    provider = "offline"
+    can_transcribe = False
 
     def extract_memo(self, text: str, known: list[dict]) -> MemoExtraction:
         sentences = _sentences(text)
@@ -368,37 +372,85 @@ class HeuristicModel:
 
 
 # --------------------------------------------------------------------------
-# OpenAI model
+# Hosted models (OpenAI or AWS Bedrock)
 
 
-class OpenAIModel:
+def inline_schema(model: type[BaseModel]) -> dict:
+    """JSON schema with every $ref expanded in place, for APIs that don't resolve $defs."""
+    schema = model.model_json_schema()
+    defs = schema.pop("$defs", {})
+
+    def expand(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return expand(dict(defs[node["$ref"].split("/")[-1]]))
+            return {k: expand(v) for k, v in node.items() if k != "title"}
+        if isinstance(node, list):
+            return [expand(v) for v in node]
+        return node
+
+    return expand(schema)
+
+
+def _allows_none(annotation) -> bool:
+    return annotation is None or type(None) in typing.get_args(annotation)
+
+
+def _fill_value(value, ann):
+    if isinstance(ann, type) and issubclass(ann, BaseModel):
+        return fill_missing(value, ann)
+    origin = typing.get_origin(ann)
+    if origin is list and isinstance(value, list):
+        args = typing.get_args(ann)
+        return [_fill_value(v, args[0]) for v in value] if args else value
+    if origin in (typing.Union, types.UnionType):
+        for arg in typing.get_args(ann):
+            if arg is type(None):
+                continue
+            is_model = isinstance(arg, type) and issubclass(arg, BaseModel) and isinstance(value, dict)
+            is_list = typing.get_origin(arg) is list and isinstance(value, list)
+            if is_model or is_list:
+                return _fill_value(value, arg)
+    return value
+
+
+def fill_missing(data, model: type[BaseModel]):
+    """Set nullable fields a model left out to None, recursing into nested models and lists."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    for name, field in model.model_fields.items():
+        if name not in out:
+            if _allows_none(field.annotation):
+                out[name] = None
+            continue
+        out[name] = _fill_value(out[name], field.annotation)
+    return out
+
+
+class HostedModel:
+    """Shared logic. Subclasses implement _parse, embed and transcribe."""
+
+    provider = "hosted"
+    can_transcribe = False
+
     def __init__(self):
-        from openai import OpenAI
-
-        settings = get_settings()
-        self.settings = settings
-        self.client = OpenAI(api_key=settings.openai_api_key)
-        self.name = settings.openai_model
+        self.settings = get_settings()
         self.fallback = HeuristicModel()
 
-    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
-        response = self.client.responses.parse(
-            model=self.settings.openai_model,
-            instructions=instructions,
-            input=payload,
-            text_format=schema,
-        )
-        parsed = response.output_parsed
-        if parsed is None:
-            raise RuntimeError("model returned no structured output")
-        return parsed
+    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):  # pragma: no cover
+        raise NotImplementedError
+
+    def check(self) -> GoalPlan:
+        """One real call with no fallback, so configuration errors surface."""
+        return self._parse(PLAN_INSTRUCTIONS, "GOAL: find a hardware mentor", GoalPlan)
 
     def extract_memo(self, text: str, known: list[dict]) -> MemoExtraction:
         payload = "KNOWN_PEOPLE:\n" + json.dumps(known[:150]) + "\n\nMEMO:\n" + text
         try:
             return self._parse(EXTRACT_INSTRUCTIONS, payload, MemoExtraction)
         except Exception as exc:
-            log.warning("extract_memo fell back to heuristics: %s", exc)
+            log.warning("extract_memo fell back to heuristics: %s: %s", type(exc).__name__, exc)
             return self.fallback.extract_memo(text, known)
 
     def plan_goal(self, text: str) -> GoalPlan:
@@ -406,9 +458,11 @@ class OpenAIModel:
             plan = self._parse(PLAN_INSTRUCTIONS, "GOAL: " + text, GoalPlan)
             for need in plan.needs:
                 need.keywords = [k.lower().strip() for k in need.keywords if k.strip()]
+            if not plan.needs:
+                raise RuntimeError("model returned no needs")
             return plan
         except Exception as exc:
-            log.warning("plan_goal fell back to heuristics: %s", exc)
+            log.warning("plan_goal fell back to heuristics: %s: %s", type(exc).__name__, exc)
             return self.fallback.plan_goal(text)
 
     def score_people(self, goal: str, plan: GoalPlan, people: list[dict]) -> Scores:
@@ -422,9 +476,39 @@ class OpenAIModel:
             try:
                 out.extend(self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores)
             except Exception as exc:
-                log.warning("score_people chunk fell back to heuristics: %s", exc)
+                log.warning("score_people chunk fell back to heuristics: %s: %s", type(exc).__name__, exc)
                 out.extend(self.fallback.score_people(goal, plan, chunk).scores)
         return Scores(scores=out)
+
+    def embed(self, texts: list[str]) -> list[list[float]] | None:  # pragma: no cover
+        return None
+
+    def transcribe(self, filename: str, data: bytes) -> str:
+        raise RuntimeError("This server can't transcribe audio. Use dictation in the browser or type the memo.")
+
+
+class OpenAIModel(HostedModel):
+    provider = "openai"
+    can_transcribe = True
+
+    def __init__(self):
+        super().__init__()
+        from openai import OpenAI
+
+        self.client = OpenAI(api_key=self.settings.openai_api_key)
+        self.name = self.settings.openai_model
+
+    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
+        response = self.client.responses.parse(
+            model=self.settings.openai_model,
+            instructions=instructions,
+            input=payload,
+            text_format=schema,
+        )
+        parsed = response.output_parsed
+        if parsed is None:
+            raise RuntimeError("model returned no structured output")
+        return parsed
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:
         if not texts:
@@ -448,13 +532,95 @@ class OpenAIModel:
         return resp.text
 
 
+class BedrockModel(HostedModel):
+    """AWS Bedrock. Structured output comes from forcing a single tool call whose
+    input schema is the pydantic model; embeddings come from Titan Text v2.
+
+    Auth is whatever boto3 finds: a Bedrock API key in AWS_BEARER_TOKEN_BEDROCK,
+    or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+    """
+
+    provider = "bedrock"
+
+    def __init__(self, client=None):
+        super().__init__()
+        self.name = self.settings.bedrock_model
+        self.embed_model = self.settings.bedrock_embed_model
+        self._embed_ok = bool(self.embed_model)
+        if client is None:
+            import boto3
+            from botocore.config import Config
+
+            client = boto3.client(
+                "bedrock-runtime",
+                region_name=self.settings.aws_region,
+                config=Config(retries={"max_attempts": 4, "mode": "adaptive"}, read_timeout=90),
+            )
+        self.client = client
+
+    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
+        tool = "record_" + re.sub(r"(?<!^)(?=[A-Z])", "_", schema.__name__).lower()
+        response = self.client.converse(
+            modelId=self.name,
+            system=[{"text": instructions}],
+            messages=[{"role": "user", "content": [{"text": payload}]}],
+            toolConfig={
+                "tools": [
+                    {
+                        "toolSpec": {
+                            "name": tool,
+                            "description": f"Record the result as {schema.__name__}. Always call this tool.",
+                            "inputSchema": {"json": inline_schema(schema)},
+                        }
+                    }
+                ],
+                "toolChoice": {"tool": {"name": tool}},
+            },
+            inferenceConfig={"maxTokens": 4096},
+        )
+        for block in response.get("output", {}).get("message", {}).get("content", []):
+            if "toolUse" in block:
+                data = block["toolUse"].get("input") or {}
+                return schema.model_validate(fill_missing(data, schema))
+        raise RuntimeError(f"model did not return {schema.__name__} (stopReason={response.get('stopReason')})")
+
+    def _embed_one(self, text: str) -> list[float]:
+        body = json.dumps({"inputText": text[:8000] or " ", "dimensions": self.settings.embed_dim, "normalize": True})
+        resp = self.client.invoke_model(
+            modelId=self.embed_model, body=body, contentType="application/json", accept="application/json"
+        )
+        return json.loads(resp["body"].read())["embedding"]
+
+    def embed(self, texts: list[str]) -> list[list[float]] | None:
+        if not texts:
+            return []
+        if not self._embed_ok:
+            return None
+        from concurrent.futures import ThreadPoolExecutor
+
+        try:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                return list(pool.map(self._embed_one, texts))
+        except Exception as exc:
+            # Don't retry on every ranking: without embeddings, ranking uses keywords plus the model.
+            self._embed_ok = False
+            log.warning("Bedrock embeddings disabled for this run (%s: %s)", type(exc).__name__, exc)
+            return None
+
+
 _model = None
 
 
 def get_model():
     global _model
     if _model is None:
-        _model = OpenAIModel() if get_settings().llm_enabled else HeuristicModel()
+        provider = get_settings().llm_provider
+        if provider == "openai":
+            _model = OpenAIModel()
+        elif provider == "bedrock":
+            _model = BedrockModel()
+        else:
+            _model = HeuristicModel()
     return _model
 
 

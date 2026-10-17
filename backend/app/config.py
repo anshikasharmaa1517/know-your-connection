@@ -66,14 +66,31 @@ def describe_falkordb_url(url: str) -> str:
     return f"{scheme}://{unquote(user)}:***@{hostpart}" if ":" in creds else f"{scheme}://***@{hostpart}"
 
 
+def detect_provider(env: Mapping[str, str] = os.environ) -> str:
+    """openai, bedrock or offline. LLM_PROVIDER wins; otherwise whichever credentials are present."""
+    chosen = (env.get("LLM_PROVIDER") or "").strip().lower()
+    if chosen in ("openai", "bedrock", "offline"):
+        return chosen
+    if (env.get("OPENAI_API_KEY") or "").strip():
+        return "openai"
+    aws_keys = (env.get("AWS_ACCESS_KEY_ID") or "").strip() and (env.get("AWS_SECRET_ACCESS_KEY") or "").strip()
+    if (env.get("AWS_BEARER_TOKEN_BEDROCK") or "").strip() or (env.get("BEDROCK_MODEL_ID") or "").strip() or aws_keys:
+        return "bedrock"
+    return "offline"
+
+
 @dataclass(frozen=True)
 class Settings:
     falkordb_url: str
+    llm_provider: str
     openai_api_key: str | None
     openai_model: str
     embed_model: str
     embed_dim: int
     transcribe_model: str
+    aws_region: str
+    bedrock_model: str
+    bedrock_embed_model: str
     graph_prefix: str
     public_url: str
     static_dir: str
@@ -83,20 +100,35 @@ class Settings:
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.openai_api_key)
+        return self.llm_provider in ("openai", "bedrock")
+
+    @property
+    def model_name(self) -> str:
+        return {"openai": self.openai_model, "bedrock": self.bedrock_model}.get(self.llm_provider, "offline heuristics")
 
 
 @lru_cache
 def get_settings() -> Settings:
     here = os.path.dirname(os.path.abspath(__file__))
     default_static = os.path.normpath(os.path.join(here, "..", "..", "frontend", "dist"))
+    provider = detect_provider()
+    if provider == "bedrock":
+        embed_dim = int(os.getenv("BEDROCK_EMBED_DIM", "1024"))
+    else:
+        embed_dim = int(os.getenv("OPENAI_EMBED_DIM", "1536"))
     return Settings(
         falkordb_url=resolve_falkordb_url(),
-        openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+        llm_provider=provider,
+        openai_api_key=(os.getenv("OPENAI_API_KEY") or "").strip() or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
         embed_model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
-        embed_dim=int(os.getenv("OPENAI_EMBED_DIM", "1536")),
+        embed_dim=embed_dim,
         transcribe_model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"),
+        # boto3 only reads AWS_DEFAULT_REGION on its own, so pass the region explicitly.
+        aws_region=(os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1").strip(),
+        bedrock_model=(os.getenv("BEDROCK_MODEL_ID") or "global.anthropic.claude-haiku-5-5").strip(),
+        # Set BEDROCK_EMBED_MODEL_ID to an empty string to turn embeddings off.
+        bedrock_embed_model=os.getenv("BEDROCK_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0").strip(),
         graph_prefix=os.getenv("CONNECTIONS_GRAPH_PREFIX", "connections"),
         public_url=os.getenv("CONNECTIONS_PUBLIC_URL", "").rstrip("/"),
         static_dir=os.getenv("CONNECTIONS_STATIC_DIR", default_static),

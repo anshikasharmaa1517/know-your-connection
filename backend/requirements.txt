@@ -4,3 +4,4 @@ python-multipart>=0.0.9
 FalkorDB>=1.8,<2
 openai>=2
 pydantic>=2.7,<3
+boto3>=1.40

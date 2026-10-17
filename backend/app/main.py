@@ -25,7 +25,12 @@ app = FastAPI(title="Connections", version="0.1.0")
 
 _boot = get_settings()
 log.info("FalkorDB: %s", describe_falkordb_url(_boot.falkordb_url))
-log.info("Model: %s", _boot.openai_model if _boot.llm_enabled else "offline heuristics (no OPENAI_API_KEY)")
+if _boot.llm_provider == "bedrock":
+    log.info("Model: AWS Bedrock %s in %s (embeddings: %s)", _boot.bedrock_model, _boot.aws_region, _boot.bedrock_embed_model or "off")
+elif _boot.llm_provider == "openai":
+    log.info("Model: OpenAI %s", _boot.openai_model)
+else:
+    log.info("Model: offline heuristics (set AWS_BEARER_TOKEN_BEDROCK or OPENAI_API_KEY to use a model)")
 if "<" in _boot.falkordb_url or "YOUR_PASSWORD" in _boot.falkordb_url.upper():
     log.warning("FALKORDB_URL still contains a placeholder like <password>. Replace it with the real value.")
 
@@ -54,7 +59,46 @@ def health():
             status_code=503,
             content={"ok": False, "falkordb": target, "error": type(exc).__name__, "detail": "FalkorDB is unreachable. See the server log."},
         )
-    return {"ok": True, "falkordb": target, "model": get_model().name, "llm": settings.llm_enabled}
+    model = get_model()
+    return {
+        "ok": True,
+        "falkordb": target,
+        "provider": model.provider,
+        "model": model.name,
+        "llm": settings.llm_enabled,
+        "voice": model.can_transcribe,
+    }
+
+
+MODEL_HINTS = {
+    "AccessDeniedException": "The key or IAM user isn't allowed to call this model. Check the key's permissions, and that the model is enabled in Bedrock.",
+    "UnrecognizedClientException": "The Bedrock API key or AWS keys were rejected. Check they're copied in full and not expired.",
+    "ValidationException": "Bedrock rejected the request, often a wrong BEDROCK_MODEL_ID or a model not offered in this region.",
+    "ResourceNotFoundException": "That model ID doesn't exist in this region. Check BEDROCK_MODEL_ID.",
+    "ThrottlingException": "Bedrock is rate limiting. Wait a minute and try again.",
+    "NoRegionError": "Set AWS_REGION.",
+    "AuthenticationError": "The OpenAI key was rejected.",
+}
+
+
+@app.get("/api/health/model")
+def health_model():
+    """Makes one real model call so a bad key or model ID shows up here, not as silent fallbacks."""
+    model = get_model()
+    if not hasattr(model, "check"):
+        return {"ok": False, "provider": model.provider, "detail": "No model configured. The app is using offline heuristics."}
+    try:
+        plan = model.check()
+    except Exception as exc:
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
+        code = code or type(exc).__name__
+        log.error("Model check failed for %s %s: %s: %s", model.provider, model.name, code, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "provider": model.provider, "model": model.name, "error": code,
+                     "hint": MODEL_HINTS.get(code, "See the server log for details.")},
+        )
+    return {"ok": True, "provider": model.provider, "model": model.name, "sample": [n.label for n in plan.needs]}
 
 
 @app.post("/api/session")
@@ -71,7 +115,15 @@ def me(v: Viewer = Depends(viewer)):
         "OPTIONAL MATCH (f:Fact) WITH direct, count(f) AS facts "
         "OPTIONAL MATCH (goal:Goal {status:'open'}) RETURN direct, facts, count(goal) AS goals",
     )
-    return {"user": v.model_dump(), "counts": counts, "llm": get_settings().llm_enabled, "model": get_model().name}
+    model = get_model()
+    return {
+        "user": v.model_dump(),
+        "counts": counts,
+        "llm": get_settings().llm_enabled,
+        "model": model.name,
+        "provider": model.provider,
+        "voice": model.can_transcribe,
+    }
 
 
 # --------------------------------------------------------------------------

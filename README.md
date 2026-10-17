@@ -23,7 +23,7 @@ FalkorDB is the only datastore. Everything is Cypher.
 | Per-user isolation | Every account gets its own FalkorDB graph, `connections_user_<id>`. Request handlers only ever open the signed-in user's graph (`auth.graph_of`). Separate graphs are separate keys, so there is no query that can wander into someone else's network. |
 | Cross-user protocol | One shared graph, `connections_shared`, holds accounts, friendships, requests, replies (count and strength only) and opt-in cards. |
 | Multi-hop warm paths | Ranking walks `(:Me)-[:KNOWS]->(p)` and `(:Me)-[:KNOWS]->(via)-[:KNOWS]-(p)`, so someone you heard about in a memo shows up as "warm path via Kabir Singh (cofounder)". |
-| Vector search | With an OpenAI key, people get `text-embedding-3-small` embeddings in a FalkorDB vector index (`CREATE VECTOR INDEX ... cosine`). Large networks are shortlisted with `db.idx.vector.queryNodes` per need before the model scores them. |
+| Vector search | With a model configured, people get embeddings (Amazon Titan Text v2 on Bedrock, or OpenAI `text-embedding-3-small`) in a FalkorDB vector index (`CREATE VECTOR INDEX ... cosine`). Large networks are shortlisted with `db.idx.vector.queryNodes` per need before the model scores them. |
 | Full-text | `db.idx.fulltext.createNodeIndex('Person', ...)` over name, company, position and headline. |
 | Receipts | Every `Person` and `Fact` hangs off a `Source` node (LinkedIn import, memo, or intro card). Ranking evidence must be a real `Fact` id or the person's profile, or it is dropped. Deleting a source removes what only it vouched for. |
 
@@ -55,7 +55,7 @@ graph LR
 **Docker (FalkorDB plus the app):**
 
 ```bash
-cp .env.example .env        # add OPENAI_API_KEY for real extraction and ranking
+cp .env.example .env        # add a Bedrock API key (or OpenAI key) for real extraction and ranking
 docker compose up --build
 ```
 
@@ -70,7 +70,8 @@ Open http://localhost:8000. FalkorDB Browser runs on http://localhost:3000 if yo
 cd backend
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-export OPENAI_API_KEY=sk-...          # optional, see below
+export AWS_BEARER_TOKEN_BEDROCK=...   # optional, see below
+export AWS_REGION=us-east-1
 uvicorn app.main:app --reload --port 8000
 
 cd ../frontend
@@ -78,7 +79,16 @@ npm install
 npm run dev                           # http://localhost:5173, proxies /api to :8000
 ```
 
-Without `OPENAI_API_KEY` the app runs on offline keyword heuristics so every flow works, but extraction and ranking are much better with the model. Voice memos need the key.
+Without a model key the app runs on offline keyword heuristics so every flow works, but extraction and ranking are much better with a model.
+
+### Model: AWS Bedrock or OpenAI
+
+The app uses whichever key it finds (or set `LLM_PROVIDER` to `bedrock`, `openai` or `offline`).
+
+- **AWS Bedrock (default if a Bedrock key is set).** Create an API key in the Bedrock console under **API keys** and set `AWS_BEARER_TOKEN_BEDROCK` plus `AWS_REGION` (the region you made the key in). The default model is Claude Haiku 5.5 through the global inference profile `global.anthropic.claude-haiku-5-5`; change it with `BEDROCK_MODEL_ID` to any Bedrock model that supports tool use. Structured output comes from forcing a single tool call whose input schema is the expected result. Embeddings use `amazon.titan-embed-text-v2:0` (set `BEDROCK_EMBED_MODEL_ID` empty to turn them off). Bedrock has no speech-to-text, so voice memos use the browser's built-in dictation.
+- **OpenAI.** Set `OPENAI_API_KEY`. Uses structured outputs, `text-embedding-3-small`, and server-side transcription for voice memos.
+
+`GET /api/health/model` makes one real model call and reports the error code with a hint if the key, region or model ID is wrong. Voice memos need the key.
 
 **Tests** (needs a FalkorDB on localhost:6379; uses its own graph prefix):
 
@@ -96,8 +106,10 @@ The `Dockerfile` builds one container that serves the API and the web app. Any c
 | `FALKORDB_PORT` | `61155` |
 | `FALKORDB_USERNAME` | `falkordb` |
 | `FALKORDB_PASSWORD` | your instance password, any characters |
-| `OPENAI_API_KEY` | `sk-...` |
-| `OPENAI_MODEL` | `gpt-5.4-mini` (any model with structured outputs) |
+| `AWS_BEARER_TOKEN_BEDROCK` | your Bedrock API key |
+| `AWS_REGION` | the region the key was created in, e.g. `us-east-1` |
+| `BEDROCK_MODEL_ID` | optional, default `global.anthropic.claude-haiku-5-5` |
+| `OPENAI_API_KEY` | instead of Bedrock: `sk-...` |
 | `CONNECTIONS_PUBLIC_URL` | `https://connections.example.com` (used in opt-in links) |
 | `PORT` | set by most hosts; defaults to 8000 |
 
@@ -130,7 +142,7 @@ backend/app/
   goals.py       goal planning, two-hop ranking with receipts, gap finding
   exchange.py    PostRequest, Answer, AskForIntro, Approve, OptIn, Reveal
   network.py     people, sources, deletion with provenance, embeddings
-  llm.py         OpenAI structured outputs, plus the offline heuristics
+  llm.py         AWS Bedrock (forced tool use) or OpenAI (structured outputs), plus offline heuristics
 frontend/src/    React app (swipe deck, people, goals, capture, ask, opt-in page)
 samples/         a fictional Connections.csv for demos and tests
 ```

@@ -57,6 +57,7 @@ class FakeEmbeddings:
 @pytest.fixture()
 def model_client(monkeypatch, store):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("CONNECTIONS_RANK_POOL", "6")
     get_settings.cache_clear()
     s = db.Store()
@@ -71,6 +72,7 @@ def model_client(monkeypatch, store):
     yield TestClient(app), model
     llm.set_model(None)
     monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.setenv("LLM_PROVIDER", "offline")
     get_settings.cache_clear()
 
 
