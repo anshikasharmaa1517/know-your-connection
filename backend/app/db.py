@@ -18,6 +18,7 @@ from typing import Any
 from falkordb import FalkorDB, Graph
 from falkordb.edge import Edge
 from falkordb.node import Node
+from redis.exceptions import ResponseError
 
 from .config import get_settings
 
@@ -133,9 +134,10 @@ class Store:
             for stmt in statements:
                 try:
                     graph.query(stmt)
-                except Exception as exc:  # index already exists
+                except ResponseError as exc:  # index already exists, or unsupported
                     if "already" not in str(exc).lower():
                         log.warning("schema statement failed on %s: %s (%s)", name, stmt, exc)
+                # Connection and auth errors propagate, so the schema is retried next time.
             self._ready.add(name)
 
     # Maintenance ---------------------------------------------------------

@@ -13,14 +13,21 @@ from . import goals as goals_mod
 from . import imports as imports_mod
 from . import network, users
 from .auth import Viewer, graph_of, viewer
-from .config import get_settings
+from .config import describe_falkordb_url, get_settings
 from .db import get_store, one
 from .linkedin import ExportError, parse_upload
 from .llm import get_model
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("cirql")
 
 app = FastAPI(title="Cirql", version="0.1.0")
+
+_boot = get_settings()
+log.info("FalkorDB: %s", describe_falkordb_url(_boot.falkordb_url))
+log.info("Model: %s", _boot.openai_model if _boot.llm_enabled else "offline heuristics (no OPENAI_API_KEY)")
+if "<" in _boot.falkordb_url or "YOUR_PASSWORD" in _boot.falkordb_url.upper():
+    log.warning("FALKORDB_URL still contains a placeholder like <password>. Replace it with the real value.")
 
 MAX_UPLOAD = 60 * 1024 * 1024
 
@@ -36,10 +43,18 @@ class NameIn(BaseModel):
 
 @app.get("/api/health")
 def health():
-    store = get_store()
-    store.shared().query("RETURN 1")
     settings = get_settings()
-    return {"ok": True, "model": get_model().name, "llm": settings.llm_enabled}
+    target = describe_falkordb_url(settings.falkordb_url)
+    try:
+        get_store().shared().query("RETURN 1")
+    except Exception as exc:
+        # Full reason goes to the server log only; it can contain parts of the URL.
+        log.error("FalkorDB check failed for %s: %s: %s", target, type(exc).__name__, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "falkordb": target, "error": type(exc).__name__, "detail": "FalkorDB is unreachable. See the server log."},
+        )
+    return {"ok": True, "falkordb": target, "model": get_model().name, "llm": settings.llm_enabled}
 
 
 @app.post("/api/session")

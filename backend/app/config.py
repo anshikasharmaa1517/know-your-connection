@@ -8,8 +8,62 @@ offline heuristics in `llm.py`, which is enough to demo the flows.
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import quote, unquote
+
+
+def normalise_falkordb_url(raw: str) -> str:
+    """Turn what people paste into a dashboard into a URL redis-py accepts.
+
+    Handles surrounding whitespace and quotes, a pasted `FALKORDB_URL=` prefix,
+    a bare `host:port` with no scheme, `falkor://` schemes, and passwords with
+    characters like # / ? @ that would otherwise break URL parsing.
+    """
+    url = (raw or "").strip().strip("\"'").strip()
+    if url.upper().startswith("FALKORDB_URL="):
+        url = url.split("=", 1)[1].strip().strip("\"'").strip()
+    if not url:
+        return "redis://localhost:6379"
+    if "://" not in url:
+        url = "redis://" + url
+    scheme, rest = url.split("://", 1)
+    scheme = {"falkor": "redis", "falkors": "rediss"}.get(scheme.lower(), scheme.lower())
+    if scheme == "unix":
+        return f"{scheme}://{rest}"
+    if "@" in rest:
+        creds, hostpart = rest.rsplit("@", 1)
+        user, _, password = creds.partition(":") if ":" in creds else ("", "", creds)
+        rest = f"{quote(unquote(user), safe='')}:{quote(unquote(password), safe='')}@{hostpart}"
+    return f"{scheme}://{rest}"
+
+
+def resolve_falkordb_url(env: Mapping[str, str] = os.environ) -> str:
+    """FALKORDB_HOST / PORT / USERNAME / PASSWORD win over FALKORDB_URL when set."""
+    host = (env.get("FALKORDB_HOST") or "").strip()
+    if host:
+        host = re.sub(r"^[a-z]+://", "", host).rstrip("/")
+        port = (env.get("FALKORDB_PORT") or "").strip()
+        if ":" in host and not port:
+            host, port = host.rsplit(":", 1)
+        user = (env.get("FALKORDB_USERNAME") or env.get("FALKORDB_USER") or "").strip()
+        password = env.get("FALKORDB_PASSWORD") or ""
+        tls = (env.get("FALKORDB_TLS") or "").strip().lower() in ("1", "true", "yes")
+        creds = f"{quote(user, safe='')}:{quote(password, safe='')}@" if (user or password) else ""
+        return f"{'rediss' if tls else 'redis'}://{creds}{host}:{port or '6379'}"
+    return normalise_falkordb_url(env.get("FALKORDB_URL") or "redis://localhost:6379")
+
+
+def describe_falkordb_url(url: str) -> str:
+    """The URL with the password hidden, safe for logs."""
+    if "://" not in url or "@" not in url:
+        return url
+    scheme, rest = url.split("://", 1)
+    creds, hostpart = rest.rsplit("@", 1)
+    user = creds.split(":", 1)[0]
+    return f"{scheme}://{unquote(user)}:***@{hostpart}" if ":" in creds else f"{scheme}://***@{hostpart}"
 
 
 @dataclass(frozen=True)
@@ -37,7 +91,7 @@ def get_settings() -> Settings:
     here = os.path.dirname(os.path.abspath(__file__))
     default_static = os.path.normpath(os.path.join(here, "..", "..", "frontend", "dist"))
     return Settings(
-        falkordb_url=os.getenv("FALKORDB_URL", "redis://localhost:6379"),
+        falkordb_url=resolve_falkordb_url(),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
         embed_model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),

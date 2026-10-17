@@ -92,11 +92,16 @@ The `Dockerfile` builds one container that serves the API and the web app. Any c
 
 | Variable | Example |
 | --- | --- |
-| `FALKORDB_URL` | `redis://default:<password>@<host>:<port>` |
+| `FALKORDB_HOST` | `r-xxxx.instance-xxxx....cloud` (from the FalkorDB Cloud Connect dialog) |
+| `FALKORDB_PORT` | `61155` |
+| `FALKORDB_USERNAME` | `falkordb` |
+| `FALKORDB_PASSWORD` | your instance password, any characters |
 | `OPENAI_API_KEY` | `sk-...` |
 | `OPENAI_MODEL` | `gpt-5.4-mini` (any model with structured outputs) |
 | `CIRQL_PUBLIC_URL` | `https://cirql.example.com` (used in opt-in links) |
 | `PORT` | set by most hosts; defaults to 8000 |
+
+Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis://falkordb:<password>@<host>:<port>`). Set the health check path to `/api/health`. If it fails, the server log names the FalkorDB host it tried (password hidden) and the reason: a `ConnectionError` means a wrong host or port, or the instance is stopped; an `AuthenticationError` means a wrong username or password.
 
 ## Demo script (about 3 minutes)
 
