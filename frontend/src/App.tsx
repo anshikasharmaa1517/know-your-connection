@@ -4,18 +4,20 @@ import { Avatar, Wordmark } from './components/Ring'
 import { Icon, Sheet, ToastProvider } from './components/ui'
 import { AskView } from './views/Ask'
 import { CaptureView } from './views/Capture'
+import { FindView } from './views/Find'
 import { GoalsView } from './views/Goals'
 import { ImportView } from './views/Import'
 import { OptInPage } from './views/OptIn'
 import { PeopleView } from './views/People'
 import { SignIn } from './views/SignIn'
 
-export type Tab = 'import' | 'people' | 'goals' | 'capture' | 'ask'
+export type Tab = 'import' | 'people' | 'find' | 'goals' | 'capture' | 'ask'
 export type AskDraft = { need: string; description: string; gap_id?: string; goal_id?: string; goal: string }
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'import', label: 'Import' },
   { id: 'people', label: 'People' },
+  { id: 'find', label: 'Find' },
   { id: 'goals', label: 'Goals' },
   { id: 'capture', label: 'Capture' },
   { id: 'ask', label: 'Ask' },
@@ -33,7 +35,7 @@ export default function App() {
 
 function Shell() {
   const [account, setAccount] = useState(currentAccount())
-  const [me, setMe] = useState<{ user: User; llm: boolean; model: string; provider: string; voice: boolean } | null>(null)
+  const [me, setMe] = useState<{ user: User; llm: boolean; model: string; provider: string; voice: boolean; plan: 'free' | 'pro'; discoverable: boolean } | null>(null)
   const [tab, setTab] = useState<Tab>(tabFromHash())
   const [draft, setDraft] = useState<AskDraft | null>(null)
   const [badge, setBadge] = useState(0)
@@ -98,6 +100,7 @@ function Shell() {
       <main key={account.user.id}>
         {tab === 'import' && <ImportView go={go} />}
         {tab === 'people' && <PeopleView go={go} />}
+        {tab === 'find' && <FindView go={go} myName={me.user.name} plan={me.plan} onPlan={(plan) => setMe({ ...me, plan })} />}
         {tab === 'goals' && (
           <GoalsView
             go={go}
@@ -153,9 +156,41 @@ function Shell() {
           <button className="btn btn-quiet" onClick={() => setAdding(true)}>
             Add another account
           </button>
+          <div className="section-title">Search</div>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={me.discoverable}
+              onChange={async (e) => {
+                const s = await api('/api/settings', { method: 'PATCH', body: { discoverable: e.target.checked } })
+                setMe({ ...me, ...s })
+              }}
+            />
+            <span>
+              Friends can find my contacts in search
+              <span className="tiny faint" style={{ display: 'block' }}>
+                They see name, title, company and LinkedIn link, as 2nd degree (3rd for their friends). Your notes and memos never leave your graph.
+              </span>
+            </span>
+          </label>
+          <div className="spread">
+            <span className="small">
+              Plan: <strong>{me.plan === 'pro' ? 'Pro' : 'Free'}</strong>
+              <span className="tiny faint"> {me.plan === 'pro' ? '3rd degree search on' : '1st and 2nd degree search'}</span>
+            </span>
+            <button
+              className="btn btn-ghost btn-small"
+              onClick={async () => {
+                const s = await api('/api/settings', { method: 'PATCH', body: { plan: me.plan === 'pro' ? 'free' : 'pro' } })
+                setMe({ ...me, ...s })
+              }}
+            >
+              {me.plan === 'pro' ? 'Back to Free' : 'Try Pro (demo)'}
+            </button>
+          </div>
           <p className="tiny faint">
             Model: {me.model}
-            {me.provider === 'bedrock' ? ' on AWS Bedrock' : me.provider === 'openai' ? ' on OpenAI' : '. Add an AWS Bedrock or OpenAI key on the server for real extraction and ranking.'}
+            {me.provider === 'bedrock' ? ' on AWS Bedrock' : me.provider === 'mantle' ? ' on AWS Bedrock Mantle' : me.provider === 'openai' ? ' on OpenAI' : '. Add an AWS Bedrock or OpenAI key on the server for real extraction and ranking.'}
           </p>
         </Sheet>
       )}

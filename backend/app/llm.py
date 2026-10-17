@@ -98,6 +98,15 @@ class Scores(BaseModel):
     scores: list[Score]
 
 
+class RoleQuery(BaseModel):
+    label: str = Field(description="The role restated in a few words, e.g. 'Software development engineer'.")
+    phrases: list[str] = Field(
+        description="8-20 lowercase job-title words or phrases that mean this role on a LinkedIn profile, "
+        "including abbreviations and level variants (e.g. 'sde', 'sde ii', 'software engineer'). "
+        "No generic words that also fit unrelated roles, like 'engineer' or 'manager' on their own."
+    )
+
+
 # --------------------------------------------------------------------------
 # Prompts
 
@@ -126,6 +135,11 @@ Rules:
 - People reached 'via' someone are second-degree: still list them if they fit, the via is the warm path.
 - Leave out anyone with no real connection to the goal (score below 30). An empty list is fine.
 """
+
+ROLE_INSTRUCTIONS = """You expand a short people search, typed by someone looking through their network, into job-title phrases.
+The search names a kind of person (a role, maybe with a sector or seniority), like 'SDE', 'PM at a fintech' or 'VC'.
+Return phrases that would literally appear in a LinkedIn position or headline for that kind of person.
+Keep them specific to the role: an 'SDE' search must not match hardware or civil engineers."""
 
 
 # --------------------------------------------------------------------------
@@ -326,6 +340,10 @@ class HeuristicModel:
         title = "Met " + ", ".join(names[:2]) if names else (sentences[0][:48] if sentences else "Memo")
         return MemoExtraction(title=title, people=[people[c] for c in order], facts=facts, ties=ties)
 
+    def expand_role(self, query: str) -> RoleQuery:
+        label = re.sub(r"\s+", " ", query.strip())
+        return RoleQuery(label=label, phrases=[label.lower()] if label else [])
+
     def plan_goal(self, text: str) -> GoalPlan:
         label = re.sub(r"\s+", " ", text.strip()).rstrip(".")
         return GoalPlan(
@@ -486,6 +504,15 @@ class HostedModel:
         except Exception as exc:
             log.warning("plan_goal fell back to heuristics: %s: %s", type(exc).__name__, exc)
             return self.fallback.plan_goal(text)
+
+    def expand_role(self, query: str) -> RoleQuery:
+        try:
+            found = self._parse(ROLE_INSTRUCTIONS, "SEARCH: " + query, RoleQuery)
+            found.phrases = [p.lower().strip() for p in found.phrases if p.strip()]
+            return found
+        except Exception as exc:
+            log.warning("expand_role fell back to heuristics: %s: %s", type(exc).__name__, exc)
+            return self.fallback.expand_role(query)
 
     def score_people(self, goal: str, plan: GoalPlan, people: list[dict]) -> Scores:
         out: list[Score] = []

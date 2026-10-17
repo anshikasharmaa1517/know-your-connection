@@ -12,6 +12,7 @@ from . import capture as capture_mod
 from . import goals as goals_mod
 from . import imports as imports_mod
 from . import network, users
+from . import search as search_mod
 from .auth import Viewer, graph_of, viewer
 from .config import apply_env_aliases, describe_falkordb_url, get_settings, related_env_names
 from .db import get_store, one
@@ -157,7 +158,30 @@ def me(v: Viewer = Depends(viewer)):
         "model": model.name,
         "provider": model.provider,
         "voice": model.can_transcribe,
+        **users.settings_of(get_store(), v.id),
     }
+
+
+class SettingsIn(BaseModel):
+    plan: str | None = None
+    discoverable: bool | None = None
+
+
+@app.patch("/api/settings")
+def update_settings(body: SettingsIn, v: Viewer = Depends(viewer)):
+    # Demo plan switch: no payment, it just flips which features are on.
+    return users.update_settings(get_store(), v.id, plan=body.plan, discoverable=body.discoverable)
+
+
+# --------------------------------------------------------------------------
+# Find: search your network by role, 1st then 2nd then (Pro) 3rd degree
+
+
+@app.get("/api/find")
+def find(q: str, depth: int = 2, v: Viewer = Depends(viewer)):
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="type a role to look for, like SDE")
+    return search_mod.find(get_store(), v.id, q[:120], depth=3 if depth >= 3 else 2)
 
 
 # --------------------------------------------------------------------------
@@ -188,10 +212,13 @@ SAMPLE_CSV = os.getenv(
 )
 
 
+SAMPLE_SETS = {"a": SAMPLE_CSV, "b": os.path.join(os.path.dirname(SAMPLE_CSV), "Connections-friend.csv")}
+
+
 @app.post("/api/imports/sample")
-def upload_sample(v: Viewer = Depends(viewer)):
-    """Import the bundled fictional export, for demos."""
-    with open(SAMPLE_CSV, "rb") as fh:
+def upload_sample(set: str = "a", v: Viewer = Depends(viewer)):
+    """Import a bundled fictional export, for demos. Set b is a different crowd for a second account."""
+    with open(SAMPLE_SETS.get(set, SAMPLE_CSV), "rb") as fh:
         parsed = parse_upload("Sample Connections.csv", fh.read())
     result = imports_mod.create_import(graph_of(v), parsed)
     result["parsed"] = {"rows": len(parsed.rows), "duplicates_in_file": parsed.duplicates_in_file, "skipped_blank": parsed.skipped_blank}

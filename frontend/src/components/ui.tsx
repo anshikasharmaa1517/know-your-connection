@@ -92,6 +92,13 @@ const paths: Record<string, ReactNode> = {
       <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
     </>
   ),
+  find: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <circle cx="10.5" cy="10.5" r="2" />
+      <path d="M15.5 15.5L20 20" />
+    </>
+  ),
   ask: (
     <>
       <circle cx="7" cy="12" r="3" />

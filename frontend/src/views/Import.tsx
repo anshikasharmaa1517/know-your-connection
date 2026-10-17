@@ -74,11 +74,11 @@ export function ImportView({ go }: { go: (t: Tab) => void }) {
     }
   }
 
-  const useSample = async () => {
+  const useSample = async (set: 'a' | 'b' = 'a') => {
     setUploading(true)
     setError(null)
     try {
-      finishUpload(await api('/api/imports/sample', { method: 'POST' }))
+      finishUpload(await api(`/api/imports/sample?set=${set}`, { method: 'POST' }))
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -122,9 +122,14 @@ export function ImportView({ go }: { go: (t: Tab) => void }) {
         <Dropzone onFile={upload} busy={uploading} />
         {error && <p className="error">{error}</p>}
         <div className="row row-wrap spread">
-          <button className="btn btn-ghost" onClick={useSample} disabled={uploading}>
-            Try it with sample connections
-          </button>
+          <span className="row row-wrap">
+            <button className="btn btn-ghost" onClick={() => useSample('a')} disabled={uploading}>
+              Try it with sample connections
+            </button>
+            <button className="btn btn-ghost btn-small" onClick={() => useSample('b')} disabled={uploading} title="A different fictional crowd, handy for a second demo account">
+              Second sample set
+            </button>
+          </span>
           {imports.length > 0 && (
             <button className="btn btn-ghost" onClick={() => setAdding(false)}>
               Back to sorting

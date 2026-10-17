@@ -8,9 +8,10 @@ You meet thirty new people a month and remember a third of them. LinkedIn shows 
 2. **Capture.** A 30 second memo after you meet someone becomes people, facts, intents, promises and ties in your graph, each pointing back at the memo that produced it.
 3. **Aim.** Set a goal ("summer 2027 VC internship") and your network re-ranks around it, with a reason and receipts per person. Change the goal, the ranking rebuilds. Close it, the ranking disappears. Open goals also reorder the import deck so the connections that fit come first.
 4. **Find the gap.** When a goal needs a kind of person you have no path to, the app says so: "No warm path to climate-tech VC."
-5. **Ask the network.** Your agent sends a redacted request to friends. Each friend's agent searches only its owner's graph and answers with a count and a strength, no names. The friend picks someone privately, that person writes their own card, and only then do you see them, with a three-way intro drafted.
+5. **Find.** Type a role like "SDE" and the app walks your graph and your friends' graphs, then lists matches by degree: people you know first, then people your friends know, with the path ("Through Bhavya"). No request or approval round trip. 3rd degree (your friends' friends) is a Pro feature because it walks many more graphs.
+6. **Ask the network.** For a gap nobody can see, your agent sends a redacted request to friends. Each friend's agent searches only its owner's graph and answers with a count and a strength, no names. The friend picks someone privately, that person writes their own card, and only then do you see them, with a three-way intro drafted.
 
-Rules enforced in code, not on a slide: an agent never reads another user's graph; every step that moves someone toward a new person needs a human click; the only thing about a third person that ever crosses accounts is a card that person wrote; relationships never decay and nobody gets a worth score; every suggestion has a receipt.
+Rules enforced in code, not on a slide: Find reads a friend's graph only if that friend leaves "Friends can find my contacts" on, and only the profile a LinkedIn connection already shows (name, title, company, link) crosses over, never notes, memos or tie strength; the Exchange agent never reads another user's graph; every step that moves someone toward a new person needs a human click; the only thing about a third person that ever crosses accounts is a card that person wrote; relationships never decay and nobody gets a worth score; every suggestion has a receipt.
 
 **Tracks:** Agent Memory and Coordination (agents persist memory per user and coordinate through a shared graph) and Agents That Act on Connected Data (multi-hop, explainable ranking with sources).
 
@@ -25,6 +26,7 @@ FalkorDB is the only datastore. Everything is Cypher.
 | Multi-hop warm paths | Ranking walks `(:Me)-[:KNOWS]->(p)` and `(:Me)-[:KNOWS]->(via)-[:KNOWS]-(p)`, so someone you heard about in a memo shows up as "warm path via Kabir Singh (cofounder)". |
 | Vector search | With a model configured, people get embeddings (Amazon Titan Text v2 on Bedrock, or OpenAI `text-embedding-3-small`) in a FalkorDB vector index (`CREATE VECTOR INDEX ... cosine`). Large networks are shortlisted with `db.idx.vector.queryNodes` per need before the model scores them. |
 | Full-text | `db.idx.fulltext.createNodeIndex('Person', ...)` over name, company, position and headline. |
+| Degree search | `search.py` runs one Cypher query per graph: `(:Me)-[:KNOWS]->(p)` filtered by role phrases for 1st degree, the same in each friend's graph plus `(:Me)-[:KNOWS]->(via)-[:KNOWS]-(p)` memo ties for 2nd, and friends-of-friends (from `FRIEND` edges in the shared graph) for 3rd. Results are de-duplicated by LinkedIn URL or name, and the lowest degree wins. "SDE" expands to title phrases (SDE II, software engineer, backend developer, member of technical staff); unknown roles are expanded by the model. |
 | Receipts | Every `Person` and `Fact` hangs off a `Source` node (LinkedIn import, memo, or intro card). Ranking evidence must be a real `Fact` id or the person's profile, or it is dropped. Deleting a source removes what only it vouched for. |
 
 ```mermaid
@@ -123,11 +125,12 @@ Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis:/
 4. Capture: paste "Had coffee with Kabir Singh from Tessellate Labs. Kabir said his cofounder Leela Varma is a climate investor at Pinecone Grove. I'll send Kabir my resume by Friday." Leela appears through a dashed ring (reached via Kabir), and the promise shows up under Capture.
 5. Open the account menu, add a second account ("Bhavya"), add each other as friends by handle, and have Bhavya capture a memo about a climate VC.
 6. As the first account, open the gap on a goal and choose **Ask your network**. The reply shows a count only. Ask for an intro, switch to Bhavya, pick the contact and copy the opt-in link. Open it, write the card, share. Back as the first account, the card and intro draft appear.
-7. Optional: open FalkorDB Browser and show that each account is its own graph.
+7. Find: add a third account, import the **Second sample set** on it, and friend it from the first. As the first account, open Find and search "SDE": your own SDEs are 1st degree, the friend's are 2nd degree with "Ask for an intro". Press **Try Pro** to walk 3rd degree.
+8. Optional: open FalkorDB Browser and show that each account is its own graph.
 
 ## What we say about privacy, and what we don't
 
-Per-user graphs isolate each network by construction, and the Exchange never writes a third person's details to the shared graph until they write their own card. That is the claim. The app does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Data sent to OpenAI for extraction and ranking follows OpenAI's API terms.
+Per-user graphs isolate each network by construction. Find is the one deliberate exception: friends who leave the search setting on let their friends (and, on Pro, their friends' friends) see the LinkedIn-level profile of their contacts, never notes or memos. The Exchange never writes a third person's details to the shared graph until they write their own card. That is the claim. The app does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Data sent to OpenAI for extraction and ranking follows OpenAI's API terms.
 
 ## Layout
 
@@ -140,6 +143,7 @@ backend/app/
   imports.py     candidates, swipe decisions, undo, bulk, deck ordering
   capture.py     memo to people, facts, intents, promises, ties
   goals.py       goal planning, two-hop ranking with receipts, gap finding
+  search.py      Find: role search by degree across your graph and friends' graphs
   exchange.py    PostRequest, Answer, AskForIntro, Approve, OptIn, Reveal
   network.py     people, sources, deletion with provenance, embeddings
   llm.py         AWS Bedrock (forced tool use) or OpenAI (structured outputs), plus offline heuristics

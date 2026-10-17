@@ -38,7 +38,7 @@ def create_user(store: Store, name: str) -> dict:
     token = new_token()
     run(
         shared,
-        "CREATE (:User {id:$id, name:$name, handle:$handle, token:$token, created_at:$now})",
+        "CREATE (:User {id:$id, name:$name, handle:$handle, token:$token, plan:'free', discoverable:true, created_at:$now})",
         {"id": uid, "name": name, "handle": handle, "token": token, "now": now_ms()},
     )
     ensure_me(store.user(uid), name)
@@ -119,3 +119,51 @@ def are_friends(store: Store, a: str, b: str) -> bool:
 
 def friend_ids(store: Store, uid: str) -> list[str]:
     return [r["id"] for r in rows(store.shared(), "MATCH (:User {id:$id})-[:FRIEND]->(f:User) RETURN f.id AS id", {"id": uid})]
+
+
+# --------------------------------------------------------------------------
+# Plan and search settings
+
+PLANS = ("free", "pro")
+
+
+def settings_of(store: Store, uid: str) -> dict:
+    found = one(store.shared(), "MATCH (u:User {id:$id}) RETURN u.plan AS plan, u.discoverable AS discoverable", {"id": uid}) or {}
+    return {
+        "plan": found.get("plan") if found.get("plan") in PLANS else "free",
+        # Accounts made before this setting existed are searchable, the same as new ones.
+        "discoverable": found.get("discoverable") is not False,
+    }
+
+
+def update_settings(store: Store, uid: str, *, plan: str | None = None, discoverable: bool | None = None) -> dict:
+    if plan is not None:
+        if plan not in PLANS:
+            raise UserError("unknown plan")
+        run(store.shared(), "MATCH (u:User {id:$id}) SET u.plan = $plan", {"id": uid, "plan": plan})
+    if discoverable is not None:
+        run(store.shared(), "MATCH (u:User {id:$id}) SET u.discoverable = $d", {"id": uid, "d": bool(discoverable)})
+    return settings_of(store, uid)
+
+
+def reach(store: Store, uid: str) -> dict:
+    """Who a search can look through: friends (2nd degree) and their friends (3rd degree).
+
+    Only accounts that leave "friends can find my contacts" on are included.
+    """
+    shared = store.shared()
+    friends_ = rows(
+        shared,
+        "MATCH (:User {id:$id})-[:FRIEND]->(f:User) WHERE coalesce(f.discoverable, true) "
+        "RETURN f.id AS id, f.name AS name ORDER BY f.name",
+        {"id": uid},
+    )
+    fof = rows(
+        shared,
+        "MATCH (me:User {id:$id})-[:FRIEND]->(f:User)-[:FRIEND]->(ff:User) "
+        "WHERE ff.id <> $id AND coalesce(ff.discoverable, true) "
+        "OPTIONAL MATCH (me)-[d:FRIEND]->(ff) WITH ff, f, d WHERE d IS NULL "
+        "RETURN ff.id AS id, ff.name AS name, collect(DISTINCT f.name) AS through ORDER BY ff.name LIMIT 60",
+        {"id": uid},
+    )
+    return {"friends": friends_, "fof": fof}
