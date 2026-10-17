@@ -47,8 +47,15 @@ class FakeMantle:
                     out = h.score_people(data["goal"], plan, data["people"])
                 return SimpleNamespace(output_text="Sure:\n" + out.model_dump_json())
 
+        class Completions:
+            def create(self_inner, *, model, messages):
+                fake.calls.append(("chat", model))
+                text = Responses().create(model=model, instructions=messages[0]["content"], input=messages[1]["content"]).output_text
+                return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
         self.models = Models()
         self.responses = Responses()
+        self.chat = SimpleNamespace(completions=Completions())
 
 
 @pytest.fixture()
@@ -85,6 +92,14 @@ def test_discovers_prefix_and_prefers_gpt(mantle):
 
 def test_plain_json_flow_end_to_end(mantle, sample_csv):
     client, model = mantle
+
+    class Bad(Exception):
+        status_code = 400
+
+    def bad(**kw):
+        raise Bad("unsupported")
+
+    model.client.responses.create = bad  # force the chat route, like Mantle's HTTP 400
     check = client.get("/api/health/model").json()
     assert check["ok"] is True and check["provider"] == "mantle"
     assert "openai.gpt-5.6-terra" in check["available_models"]
@@ -113,9 +128,16 @@ def test_http_error_is_reported_not_crashed(mantle):
     def boom(**kw):
         raise Err("forbidden")
 
-    model.client.responses.parse = boom
     model.client.responses.create = boom
+    model.client.chat.completions.create = boom
+    model._routes = lambda: [(model.base_url, "responses", model.name)]
     r = client.get("/api/health/model")
     assert r.status_code == 503
     assert r.json()["error"] == "Err (HTTP 403)"
     assert "openai.gpt-5.6-terra" in r.json()["available_models"]
+
+
+def test_route_is_remembered(mantle):
+    client, model = mantle
+    client.get("/api/health/model")
+    assert model.route is not None and model.route[2] == "openai.gpt-5.6-terra"

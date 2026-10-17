@@ -735,7 +735,8 @@ class MantleModel(OpenAIModel):
         self.available: list[str] = []
         self.base_url = ""
         self._factory = client_factory or self._openai_client
-        self._strict_ok = True
+        self.route = None
+        self.refused: dict[str, str] = {}
         self.name = (os.environ.get("MANTLE_MODEL_ID") or "").strip()
         self.client = None
         self._discover()
@@ -769,34 +770,56 @@ class MantleModel(OpenAIModel):
             self.name = chosen or (text_models[0] if text_models else self.PREFERRED[0])
         log.info("Mantle: %s via %s (%d models listed)", self.name, self.base_url, len(self.available))
 
-    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
-        if self._strict_ok:
-            try:
-                response = self.client.responses.parse(
-                    model=self.name, instructions=instructions, input=payload, text_format=schema
-                )
-                if response.output_parsed is not None:
-                    return response.output_parsed
-            except Exception as exc:
-                code = getattr(exc, "status_code", None)
-                if code in (401, 403, 404, 429):
-                    raise
-                self._strict_ok = False
-                log.warning("Mantle strict output not accepted (%s); using plain JSON", exc)
-        return self._parse_plain_json(instructions, payload, schema)
+    BACKUP_MODELS = ("openai.gpt-oss-120b", "openai.gpt-5.5", "openai.gpt-5.4", "qwen.qwen3-235b-a22b-2507")
 
-    def _parse_plain_json(self, instructions: str, payload: str, schema: type[BaseModel]):
+    def _routes(self):
+        """(base_url, api, model) combinations to try, best first, until one works."""
+        prefixes = [self.base_url] + [
+            f"https://bedrock-mantle.{self.region}.api.aws{p}" for p in ("/v1", "/openai/v1")
+        ]
+        bases = list(dict.fromkeys(prefixes))
+        models = [self.name] + [m for m in self.BACKUP_MODELS if m != self.name and (not self.available or m in self.available)]
+        return [(b, api, m) for m in models for b in bases for api in ("responses", "chat")]
+
+    def _ask(self, base: str, api: str, model: str, instructions: str, payload: str) -> str:
+        client = self.client if base == self.base_url else self._factory(base)
+        if api == "responses":
+            response = client.responses.create(model=model, instructions=instructions, input=payload)
+            return getattr(response, "output_text", "") or ""
+        response = client.chat.completions.create(
+            model=model, messages=[{"role": "system", "content": instructions}, {"role": "user", "content": payload}]
+        )
+        return response.choices[0].message.content or ""
+
+    def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
         guide = (
             instructions
             + "\n\nReply with ONLY a JSON object matching this JSON schema. No prose, no code fences.\n"
             + json.dumps(inline_schema(schema))
         )
-        response = self.client.responses.create(model=self.name, instructions=guide, input=payload)
-        text = getattr(response, "output_text", "") or ""
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise RuntimeError(f"model returned no JSON object: {text[:120]!r}")
-        return schema.model_validate(fill_missing(json.loads(text[start : end + 1]), schema))
+        routes = [self.route] if getattr(self, "route", None) else self._routes()
+        last = None
+        for base, api, model in routes:
+            try:
+                text = self._ask(base, api, model, guide, payload)
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                if status in (400, 403, 404, 405, 422) and len(routes) > 1:
+                    last = exc
+                    self.refused[f"{model} {api} {base.rsplit('.api.aws', 1)[-1]}"] = f"HTTP {status}"
+                    continue
+                raise
+            if not getattr(self, "route", None):
+                self.route = (base, api, model)
+                if base != self.base_url:
+                    self.client, self.base_url = self._factory(base), base
+                self.name = model
+                log.info("Mantle: using %s via %s (%s API)", model, base, api)
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                raise RuntimeError(f"model returned no JSON object: {text[:120]!r}")
+            return schema.model_validate(fill_missing(json.loads(text[start : end + 1]), schema))
+        raise last or RuntimeError("no Mantle route worked")
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:
         return None
