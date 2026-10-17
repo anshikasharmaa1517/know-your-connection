@@ -621,7 +621,8 @@ class BedrockModel(HostedModel):
                     return self._mantle(model.removeprefix("mantle:"), request)
                 return self.client.converse(modelId=model, **request)
             except Exception as exc:
-                code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
+                resp = getattr(exc, "response", None)
+                code = resp.get("Error", {}).get("Code") if isinstance(resp, dict) else None
                 if code not in self.SWITCH_ON:
                     raise
                 with self._switch_lock:

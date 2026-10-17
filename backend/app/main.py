@@ -75,6 +75,19 @@ def health():
     }
 
 
+def error_code(exc: Exception) -> str:
+    """AWS error code, or HTTP status for OpenAI-style errors, or the exception type."""
+    resp = getattr(exc, "response", None)
+    if isinstance(resp, dict):
+        code = resp.get("Error", {}).get("Code")
+        if code:
+            return code
+    status = getattr(exc, "status_code", None)
+    if status:
+        return f"{type(exc).__name__} (HTTP {status})"
+    return type(exc).__name__
+
+
 MODEL_HINTS = {
     "AccessDeniedException": "The key or IAM user isn't allowed to call this model. Check the key's permissions, and that the model is enabled in Bedrock.",
     "UnrecognizedClientException": "The Bedrock API key or AWS keys were rejected. Check they're copied in full and not expired.",
@@ -83,6 +96,10 @@ MODEL_HINTS = {
     "ThrottlingException": "Bedrock is rate limiting. Wait a minute and try again.",
     "NoRegionError": "Set AWS_REGION.",
     "AuthenticationError": "The OpenAI key was rejected.",
+    "AuthenticationError (HTTP 401)": "Mantle rejected the Bedrock API key. Check it's copied in full and made in AWS_REGION.",
+    "PermissionDeniedError (HTTP 403)": "Mantle says this key can't use that model. Set MANTLE_MODEL_ID to one from available_models.",
+    "NotFoundError (HTTP 404)": "Mantle doesn't have that model at this address. Set MANTLE_MODEL_ID to one from available_models.",
+    "RateLimitError (HTTP 429)": "Mantle is rate limiting. Wait a minute and try again.",
 }
 
 
@@ -100,8 +117,7 @@ def health_model():
     try:
         plan = model.check()
     except Exception as exc:
-        code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
-        code = code or type(exc).__name__
+        code = error_code(exc)
         log.error("Model check failed for %s %s: %s: %s", model.provider, model.name, code, exc)
         return JSONResponse(
             status_code=503,

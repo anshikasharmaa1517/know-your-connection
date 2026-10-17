@@ -101,3 +101,21 @@ def test_bedrock_key_alone_means_mantle():
     assert detect_provider({"AWS_BEARER_TOKEN_BEDROCK": "k"}) == "mantle"
     assert detect_provider({"AWS_BEARER_TOKEN_BEDROCK": "k", "BEDROCK_MODEL_ID": "x"}) == "bedrock"
     assert detect_provider({"AWS_ACCESS_KEY_ID": "a", "AWS_SECRET_ACCESS_KEY": "b"}) == "bedrock"
+
+
+def test_http_error_is_reported_not_crashed(mantle):
+    client, model = mantle
+
+    class Err(Exception):
+        status_code = 403
+        response = object()  # an httpx-style response, not an AWS dict
+
+    def boom(**kw):
+        raise Err("forbidden")
+
+    model.client.responses.parse = boom
+    model.client.responses.create = boom
+    r = client.get("/api/health/model")
+    assert r.status_code == 503
+    assert r.json()["error"] == "Err (HTTP 403)"
+    assert "openai.gpt-5.6-terra" in r.json()["available_models"]
