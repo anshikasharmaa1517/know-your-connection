@@ -617,6 +617,8 @@ class BedrockModel(HostedModel):
         while True:
             model = self.name
             try:
+                if model.startswith("mantle:"):
+                    return self._mantle(model.removeprefix("mantle:"), request)
                 return self.client.converse(modelId=model, **request)
             except Exception as exc:
                 code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
@@ -629,6 +631,55 @@ class BedrockModel(HostedModel):
                         self.refused[model] = code
                         self.name = self._fallbacks.pop(0)
                         log.warning("Bedrock refused %s (%s: %s). Switching to %s.", model, code, exc, self.name)
+
+    def _mantle_post(self, url: str, body: dict, key: str) -> dict:
+        import urllib.error
+        import urllib.request
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode(),
+            headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:300]
+            code = {400: "ValidationException", 401: "AccessDeniedException", 403: "AccessDeniedException",
+                    404: "ResourceNotFoundException", 429: "ThrottlingException"}.get(exc.code, "ServiceUnavailableException")
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": code, "Message": f"mantle HTTP {exc.code}: {detail}"}}, "Messages") from None
+
+    def _mantle(self, model: str, request: dict) -> dict:
+        """Call Claude through the bedrock-mantle endpoint (Anthropic Messages API) and return a
+        Converse-shaped response, so the rest of the code doesn't care which endpoint answered."""
+        import os
+
+        key = (os.environ.get("AWS_BEARER_TOKEN_BEDROCK") or "").strip()
+        if not key:
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": "no Bedrock API key for mantle"}}, "Messages")
+        spec = request["toolConfig"]["tools"][0]["toolSpec"]
+        body = {
+            "model": model,
+            "max_tokens": request.get("inferenceConfig", {}).get("maxTokens", 4096),
+            "system": " ".join(b["text"] for b in request.get("system", [])),
+            "messages": [
+                {"role": m["role"], "content": " ".join(c["text"] for c in m["content"] if "text" in c)}
+                for m in request["messages"]
+            ],
+            "tools": [{"name": spec["name"], "description": spec["description"], "input_schema": spec["inputSchema"]["json"]}],
+            "tool_choice": {"type": "tool", "name": spec["name"]},
+        }
+        url = f"https://bedrock-mantle.{self.settings.aws_region}.api.aws/anthropic/v1/messages"
+        data = self._mantle_post(url, body, key)
+        content = [{"toolUse": {"name": b.get("name"), "input": b.get("input") or {}}}
+                   for b in data.get("content", []) if b.get("type") == "tool_use"]
+        return {"stopReason": data.get("stop_reason"), "output": {"message": {"role": "assistant", "content": content}}}
 
     def _embed_one(self, text: str) -> list[float]:
         body = json.dumps({"inputText": text[:8000] or " ", "dimensions": self.settings.embed_dim, "normalize": True})

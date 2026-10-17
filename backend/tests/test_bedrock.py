@@ -204,6 +204,8 @@ def test_offline_model_check_lists_setting_names(client, monkeypatch):
 def test_refused_claude_falls_back_to_nova(bedrock):
     client, fake = bedrock
     fake.refuse = {"global.anthropic.claude-haiku-5-5"}
+    model = llm.get_model()
+    model._fallbacks = [m for m in model._fallbacks if not m.startswith("mantle:")]
     llm.get_model().fallback = NoFallback()  # the fallback model must answer, not the keyword heuristics
     check = client.get("/api/health/model").json()
     assert check["ok"] is True
@@ -217,6 +219,8 @@ def test_refused_claude_falls_back_to_nova(bedrock):
 def test_all_models_refused_reports_each(bedrock):
     client, fake = bedrock
     fake.refuse = {"global.anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0"}
+    model = llm.get_model()
+    model._fallbacks = [m for m in model._fallbacks if not m.startswith("mantle:")]
     r = client.get("/api/health/model")
     assert r.status_code == 503 and r.json()["error"] == "AccessDeniedException"
     assert set(r.json()["refused"]) == {"global.anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0"}
@@ -225,9 +229,9 @@ def test_all_models_refused_reports_each(bedrock):
 @pytest.mark.parametrize(
     "region,expected",
     [
-        ("us-east-1", ("global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0")),
-        ("ap-south-1", ("global.amazon.nova-2-lite-v1:0",)),
-        ("eu-west-1", ("global.amazon.nova-2-lite-v1:0", "eu.amazon.nova-2-lite-v1:0")),
+        ("us-east-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0")),
+        ("ap-south-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0")),
+        ("eu-west-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "eu.amazon.nova-2-lite-v1:0")),
     ],
 )
 def test_fallback_list_by_region(region, expected):
@@ -235,3 +239,24 @@ def test_fallback_list_by_region(region, expected):
 
     assert bedrock_fallbacks({"AWS_REGION": region}) == expected
     assert bedrock_fallbacks({"AWS_REGION": region, "BEDROCK_FALLBACK_MODEL_IDS": "none"}) == ()
+
+
+def test_mantle_is_tried_after_runtime_refuses(bedrock, monkeypatch):
+    client, fake = bedrock
+    fake.refuse = {"global.anthropic.claude-haiku-5-5"}
+    model = llm.get_model()
+    model.fallback = NoFallback()
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "mantle-key")
+    calls = []
+
+    def fake_post(url, body, key):
+        calls.append((url, body["model"], key, body["tool_choice"]))
+        plan = llm.HeuristicModel().plan_goal("hardware mentor")
+        return {"stop_reason": "tool_use", "content": [{"type": "tool_use", "name": body["tool_choice"]["name"], "input": plan.model_dump()}]}
+
+    monkeypatch.setattr(model, "_mantle_post", fake_post)
+    check = client.get("/api/health/model").json()
+    assert check["ok"] is True and check["model"] == "mantle:anthropic.claude-haiku-5-5"
+    url, mid, key, choice = calls[0]
+    assert url == "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages"
+    assert mid == "anthropic.claude-haiku-5-5" and key == "mantle-key" and choice["type"] == "tool"
