@@ -33,9 +33,11 @@ class FakeMantle:
                     raise RuntimeError("json_schema not supported")
                 raise AssertionError("not used in tests")
 
-            def create(self_inner, *, model, instructions, input):
+            def create(self_inner, *, model, input, instructions=None):
                 fake.calls.append(("create", model))
-                assert "JSON schema" in instructions
+                if instructions is None:  # everything arrives in one message
+                    assert "JSON schema" in input and "=== INPUT ===" in input
+                    input = input.split("=== INPUT ===\n", 1)[1].split("\n=== END INPUT ===", 1)[0]
                 if input.startswith("GOAL: "):
                     out = h.plan_goal(input.removeprefix("GOAL: "))
                 elif input.startswith("KNOWN_PEOPLE:"):
@@ -50,7 +52,8 @@ class FakeMantle:
         class Completions:
             def create(self_inner, *, model, messages):
                 fake.calls.append(("chat", model))
-                text = Responses().create(model=model, instructions=messages[0]["content"], input=messages[1]["content"]).output_text
+                assert len(messages) == 1 and messages[0]["role"] == "user"
+                text = Responses().create(model=model, input=messages[0]["content"]).output_text
                 return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
         self.models = Models()

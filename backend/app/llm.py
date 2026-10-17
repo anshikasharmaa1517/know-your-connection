@@ -799,8 +799,10 @@ class MantleModel(OpenAIModel):
 
     def _ask(self, base: str, api: str, model: str, instructions: str, payload: str) -> str:
         client = self.client if base == self.base_url else self._factory(base)
+        # Mantle ignored the separate instructions field, so everything goes in the one user message.
+        message = f"{instructions}\n\n=== INPUT ===\n{payload}\n=== END INPUT ===\n\nReturn the JSON object now."
         if api == "responses":
-            response = client.responses.create(model=model, instructions=instructions, input=payload)
+            response = client.responses.create(model=model, input=message)
             text = getattr(response, "output_text", "") or ""
             if not text.strip():
                 parts = []
@@ -812,7 +814,7 @@ class MantleModel(OpenAIModel):
                 text = "\n".join(parts)
             return text
         response = client.chat.completions.create(
-            model=model, messages=[{"role": "system", "content": instructions}, {"role": "user", "content": payload}]
+            model=model, messages=[{"role": "user", "content": message}]
         )
         msg = response.choices[0].message
         return (msg.content or "") or (getattr(msg, "reasoning_content", None) or "")
