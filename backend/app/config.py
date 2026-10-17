@@ -186,7 +186,11 @@ def bedrock_fallbacks(env: Mapping[str, str] = os.environ) -> tuple[str, ...]:
         return tuple(m.strip() for m in raw.split(",") if m.strip())
     region = (env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or "us-east-1").strip().lower()
     # Same Claude model through the bedrock-mantle endpoint (Anthropic Messages API), then Amazon Nova.
-    models = ["mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0"]
+    mantle = ["anthropic.claude-haiku-4-5", "anthropic.claude-sonnet-5", "anthropic.claude-haiku-5-5"]
+    models = [f"mantle:{m}" for m in mantle]
+    if region != "us-east-1":
+        models += [f"mantle:us-east-1/{m}" for m in mantle[:2]]
+    models.append("global.amazon.nova-2-lite-v1:0")
     if region.startswith(("us-", "ca-")):
         models.append("us.amazon.nova-2-lite-v1:0")
     elif region.startswith("eu-"):

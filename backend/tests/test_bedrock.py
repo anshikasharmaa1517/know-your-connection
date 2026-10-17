@@ -229,9 +229,11 @@ def test_all_models_refused_reports_each(bedrock):
 @pytest.mark.parametrize(
     "region,expected",
     [
-        ("us-east-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0")),
-        ("ap-south-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0")),
-        ("eu-west-1", ("mantle:anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "eu.amazon.nova-2-lite-v1:0")),
+        ("us-east-1", ("mantle:anthropic.claude-haiku-4-5", "mantle:anthropic.claude-sonnet-5", "mantle:anthropic.claude-haiku-5-5",
+                       "global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0")),
+        ("ap-south-1", ("mantle:anthropic.claude-haiku-4-5", "mantle:anthropic.claude-sonnet-5", "mantle:anthropic.claude-haiku-5-5",
+                        "mantle:us-east-1/anthropic.claude-haiku-4-5", "mantle:us-east-1/anthropic.claude-sonnet-5",
+                        "global.amazon.nova-2-lite-v1:0")),
     ],
 )
 def test_fallback_list_by_region(region, expected):
@@ -256,7 +258,7 @@ def test_mantle_is_tried_after_runtime_refuses(bedrock, monkeypatch):
 
     monkeypatch.setattr(model, "_mantle_post", fake_post)
     check = client.get("/api/health/model").json()
-    assert check["ok"] is True and check["model"] == "mantle:anthropic.claude-haiku-5-5"
+    assert check["ok"] is True and check["model"] == "mantle:anthropic.claude-haiku-4-5"
     url, mid, key, choice = calls[0]
     assert url == "https://bedrock-mantle.us-east-1.api.aws/anthropic/v1/messages"
-    assert mid == "anthropic.claude-haiku-5-5" and key == "mantle-key" and choice["type"] == "tool"
+    assert mid == "anthropic.claude-haiku-4-5" and key == "mantle-key" and choice["type"] == "tool"

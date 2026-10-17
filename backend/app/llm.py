@@ -675,7 +675,11 @@ class BedrockModel(HostedModel):
             "tools": [{"name": spec["name"], "description": spec["description"], "input_schema": spec["inputSchema"]["json"]}],
             "tool_choice": {"type": "tool", "name": spec["name"]},
         }
-        url = f"https://bedrock-mantle.{self.settings.aws_region}.api.aws/anthropic/v1/messages"
+        region = self.settings.aws_region
+        if "/" in model:  # "us-east-1/anthropic.claude-haiku-4-5"
+            region, model = model.split("/", 1)
+            body["model"] = model
+        url = f"https://bedrock-mantle.{region}.api.aws/anthropic/v1/messages"
         data = self._mantle_post(url, body, key)
         content = [{"toolUse": {"name": b.get("name"), "input": b.get("input") or {}}}
                    for b in data.get("content", []) if b.get("type") == "tool_use"]
