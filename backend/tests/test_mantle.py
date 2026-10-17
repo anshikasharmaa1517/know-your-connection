@@ -141,3 +141,8 @@ def test_route_is_remembered(mantle):
     client, model = mantle
     client.get("/api/health/model")
     assert model.route is not None and model.route[2] == "openai.gpt-5.6-terra"
+
+
+def test_extract_json_skips_reasoning_and_prose():
+    assert llm.extract_json('<think>{"draft": 1}</think>Sure! ```json\n{"a": {"b": 2}}\n```') == {"a": {"b": 2}}
+    assert llm.extract_json("noise {bad} then {\"ok\": true}") == {"ok": True}

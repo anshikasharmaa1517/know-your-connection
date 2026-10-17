@@ -124,7 +124,8 @@ def health_model():
             content={"ok": False, "provider": model.provider, "model": model.name, "error": code,
                      "hint": MODEL_HINTS.get(code, "See the server log for details."),
                      "refused": getattr(model, "refused", {}),
-                     "available_models": getattr(model, "available", None)},
+                     "available_models": getattr(model, "available", None),
+                     **({"detail": str(exc)[:300]} if isinstance(exc, (RuntimeError, ValueError)) else {})},
         )
     out = {"ok": True, "provider": model.provider, "model": model.name, "sample": [n.label for n in plan.needs]}
     if getattr(model, "available", None) is not None and model.provider == "mantle":

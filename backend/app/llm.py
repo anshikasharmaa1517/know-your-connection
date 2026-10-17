@@ -710,6 +710,22 @@ class BedrockModel(HostedModel):
             return None
 
 
+def extract_json(text: str) -> dict:
+    """The first JSON object in a model reply, ignoring reasoning tags, code fences and prose."""
+    text = re.sub(r"<(think|reasoning)>.*?</\1>", "", text or "", flags=re.S)
+    text = text.replace("```json", "```")
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch == "{":
+            try:
+                obj, _ = decoder.raw_decode(text[i:])
+            except ValueError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+    raise RuntimeError(f"model returned no JSON object; reply began: {text.strip()[:160]!r}")
+
+
 class MantleModel(OpenAIModel):
     """OpenAI-style models (for example openai.gpt-5.6-terra) through Amazon Bedrock Mantle's
     OpenAI-compatible API, authenticated with a Bedrock API key. Picks the model from what the
@@ -785,11 +801,21 @@ class MantleModel(OpenAIModel):
         client = self.client if base == self.base_url else self._factory(base)
         if api == "responses":
             response = client.responses.create(model=model, instructions=instructions, input=payload)
-            return getattr(response, "output_text", "") or ""
+            text = getattr(response, "output_text", "") or ""
+            if not text.strip():
+                parts = []
+                for item in getattr(response, "output", None) or []:
+                    for c in getattr(item, "content", None) or []:
+                        t = getattr(c, "text", None)
+                        if t:
+                            parts.append(t)
+                text = "\n".join(parts)
+            return text
         response = client.chat.completions.create(
             model=model, messages=[{"role": "system", "content": instructions}, {"role": "user", "content": payload}]
         )
-        return response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        return (msg.content or "") or (getattr(msg, "reasoning_content", None) or "")
 
     def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
         guide = (
@@ -815,10 +841,7 @@ class MantleModel(OpenAIModel):
                     self.client, self.base_url = self._factory(base), base
                 self.name = model
                 log.info("Mantle: using %s via %s (%s API)", model, base, api)
-            start, end = text.find("{"), text.rfind("}")
-            if start < 0 or end <= start:
-                raise RuntimeError(f"model returned no JSON object: {text[:120]!r}")
-            return schema.model_validate(fill_missing(json.loads(text[start : end + 1]), schema))
+            return schema.model_validate(fill_missing(extract_json(text), schema))
         raise last or RuntimeError("no Mantle route worked")
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:
