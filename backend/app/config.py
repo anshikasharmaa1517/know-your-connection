@@ -66,6 +66,73 @@ def describe_falkordb_url(url: str) -> str:
     return f"{scheme}://{unquote(user)}:***@{hostpart}" if ":" in creds else f"{scheme}://***@{hostpart}"
 
 
+BEDROCK_KEY_NAMES = (
+    "AWS_BEARER_TOKEN_BEDROCK", "BEDROCK_API_KEY", "AWS_BEDROCK_API_KEY", "BEDROCK_KEY", "AWS_BEDROCK_KEY",
+    "BEDROCK_TOKEN", "AWS_BEDROCK_TOKEN", "BEDROCK_BEARER_TOKEN", "AWS_BEARER_TOKEN",
+)
+REGION_NAMES = ("AWS_REGION", "AWS_DEFAULT_REGION", "BEDROCK_REGION", "AWS_BEDROCK_REGION", "REGION")
+REGION_ALIASES = {
+    "n. virginia": "us-east-1", "north virginia": "us-east-1", "virginia": "us-east-1", "us east (n. virginia)": "us-east-1",
+    "ohio": "us-east-2", "us east (ohio)": "us-east-2", "oregon": "us-west-2", "us west (oregon)": "us-west-2",
+    "mumbai": "ap-south-1", "asia pacific (mumbai)": "ap-south-1", "singapore": "ap-southeast-1",
+    "asia pacific (singapore)": "ap-southeast-1", "tokyo": "ap-northeast-1", "sydney": "ap-southeast-2",
+    "frankfurt": "eu-central-1", "ireland": "eu-west-1", "london": "eu-west-2", "paris": "eu-west-3",
+}
+RELATED_PREFIXES = ("AWS", "BEDROCK", "OPENAI", "LLM", "FALKOR", "REGION", "CONNECTIONS")
+
+
+def _clean_secret(value: str) -> str:
+    value = (value or "").strip().strip("\"'").strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    return value
+
+
+def _lookup(env: Mapping[str, str], names: tuple[str, ...]) -> tuple[str, str] | None:
+    """Find a variable by any accepted name, forgiving case and stray spaces in the name."""
+    wanted = {n: i for i, n in enumerate(names)}
+    found = []
+    for key, value in env.items():
+        norm = key.strip().upper().replace(" ", "_").replace("-", "_")
+        if norm in wanted and (value or "").strip():
+            found.append((wanted[norm], key, value))
+    if not found:
+        return None
+    _, key, value = min(found)
+    return key, value
+
+
+def apply_env_aliases(env=os.environ) -> list[str]:
+    """Copy a Bedrock key or region set under another name to the names boto3 and the app read.
+    Returns notes for the startup log. Never returns values."""
+    notes = []
+    hit = _lookup(env, BEDROCK_KEY_NAMES)
+    if hit:
+        key, value = hit
+        cleaned = _clean_secret(value)
+        if key != "AWS_BEARER_TOKEN_BEDROCK" or cleaned != value:
+            env["AWS_BEARER_TOKEN_BEDROCK"] = cleaned
+            notes.append(f"Using Bedrock key from {key.strip()!r}")
+    region = _lookup(env, REGION_NAMES)
+    if region:
+        key, value = region
+        code = REGION_ALIASES.get(value.strip().lower(), value.strip().lower())
+        if key != "AWS_REGION" or code != value:
+            env["AWS_REGION"] = code
+            notes.append(f"Using region {code} from {key.strip()!r}")
+    return notes
+
+
+def related_env_names(env: Mapping[str, str] = os.environ) -> list[str]:
+    """Names (never values) of settings that look relevant, for diagnosing a misconfigured deploy."""
+    out = []
+    for key, value in env.items():
+        norm = key.strip().upper()
+        if norm.startswith(RELATED_PREFIXES) and norm not in ("AWS_CA_BUNDLE",):
+            out.append(f"{key}{'' if (value or '').strip() else ' (empty)'}")
+    return sorted(out)
+
+
 def detect_provider(env: Mapping[str, str] = os.environ) -> str:
     """openai, bedrock or offline. LLM_PROVIDER wins; otherwise whichever credentials are present."""
     chosen = (env.get("LLM_PROVIDER") or "").strip().lower()
@@ -111,6 +178,7 @@ class Settings:
 def get_settings() -> Settings:
     here = os.path.dirname(os.path.abspath(__file__))
     default_static = os.path.normpath(os.path.join(here, "..", "..", "frontend", "dist"))
+    apply_env_aliases()
     provider = detect_provider()
     if provider == "bedrock":
         embed_dim = int(os.getenv("BEDROCK_EMBED_DIM", "1024"))

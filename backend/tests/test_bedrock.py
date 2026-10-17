@@ -167,3 +167,31 @@ def test_inline_schema_and_fill_missing():
 )
 def test_detect_provider(env, expected):
     assert detect_provider(env) == expected
+
+
+def test_bedrock_key_under_other_names_is_picked_up():
+    from app.config import apply_env_aliases, detect_provider, related_env_names
+
+    env = {" bedrock_api_key ": '"Bearer abc123"', "AWS_REGION": "Mumbai", "OPENAI_API_KEY": ""}
+    notes = apply_env_aliases(env)
+    assert env["AWS_BEARER_TOKEN_BEDROCK"] == "abc123"
+    assert env["AWS_REGION"] == "ap-south-1"
+    assert detect_provider(env) == "bedrock"
+    assert notes and all("abc123" not in n for n in notes)
+    seen = related_env_names(env)
+    assert "OPENAI_API_KEY (empty)" in seen and all("abc123" not in s for s in seen)
+
+
+def test_correct_names_are_left_alone():
+    from app.config import apply_env_aliases
+
+    env = {"AWS_BEARER_TOKEN_BEDROCK": "abc", "AWS_REGION": "us-east-1"}
+    assert apply_env_aliases(env) == [] and env == {"AWS_BEARER_TOKEN_BEDROCK": "abc", "AWS_REGION": "us-east-1"}
+
+
+def test_offline_model_check_lists_setting_names(client, monkeypatch):
+    monkeypatch.setenv("BEDROCK_MODEL_IDX", "typo")
+    body = client.get("/api/health/model").json()
+    assert body["ok"] is False and body["provider"] == "offline"
+    assert "BEDROCK_MODEL_IDX" in body["settings_seen"]
+    assert "typo" not in str(body)

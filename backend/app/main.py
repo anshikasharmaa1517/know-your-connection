@@ -13,7 +13,7 @@ from . import goals as goals_mod
 from . import imports as imports_mod
 from . import network, users
 from .auth import Viewer, graph_of, viewer
-from .config import describe_falkordb_url, get_settings
+from .config import apply_env_aliases, describe_falkordb_url, get_settings, related_env_names
 from .db import get_store, one
 from .linkedin import ExportError, parse_upload
 from .llm import get_model
@@ -23,7 +23,10 @@ log = logging.getLogger("connections")
 
 app = FastAPI(title="Connections", version="0.1.0")
 
+_alias_notes = apply_env_aliases()
 _boot = get_settings()
+for _note in _alias_notes:
+    log.info(_note)
 log.info("FalkorDB: %s", describe_falkordb_url(_boot.falkordb_url))
 if _boot.llm_provider == "bedrock":
     log.info("Model: AWS Bedrock %s in %s (embeddings: %s)", _boot.bedrock_model, _boot.aws_region, _boot.bedrock_embed_model or "off")
@@ -86,7 +89,12 @@ def health_model():
     """Makes one real model call so a bad key or model ID shows up here, not as silent fallbacks."""
     model = get_model()
     if not hasattr(model, "check"):
-        return {"ok": False, "provider": model.provider, "detail": "No model configured. The app is using offline heuristics."}
+        return {
+            "ok": False,
+            "provider": model.provider,
+            "detail": "No model configured. The app is using offline heuristics. Set AWS_BEARER_TOKEN_BEDROCK (and AWS_REGION) or OPENAI_API_KEY, then redeploy.",
+            "settings_seen": related_env_names(),
+        }
     try:
         plan = model.check()
     except Exception as exc:
