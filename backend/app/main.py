@@ -28,7 +28,9 @@ _boot = get_settings()
 for _note in _alias_notes:
     log.info(_note)
 log.info("FalkorDB: %s", describe_falkordb_url(_boot.falkordb_url))
-if _boot.llm_provider == "bedrock":
+if _boot.llm_provider == "mantle":
+    log.info("Model: AWS Bedrock Mantle (OpenAI-compatible) in %s, model chosen from the key's list", _boot.aws_region)
+elif _boot.llm_provider == "bedrock":
     log.info("Model: AWS Bedrock %s in %s (embeddings: %s)", _boot.bedrock_model, _boot.aws_region, _boot.bedrock_embed_model or "off")
 elif _boot.llm_provider == "openai":
     log.info("Model: OpenAI %s", _boot.openai_model)
@@ -105,9 +107,12 @@ def health_model():
             status_code=503,
             content={"ok": False, "provider": model.provider, "model": model.name, "error": code,
                      "hint": MODEL_HINTS.get(code, "See the server log for details."),
-                     "refused": getattr(model, "refused", {})},
+                     "refused": getattr(model, "refused", {}),
+                     "available_models": getattr(model, "available", None)},
         )
     out = {"ok": True, "provider": model.provider, "model": model.name, "sample": [n.label for n in plan.needs]}
+    if getattr(model, "available", None) is not None and model.provider == "mantle":
+        out["available_models"] = model.available
     if getattr(model, "refused", None):
         out["fell_back_from"] = model.refused
     return out

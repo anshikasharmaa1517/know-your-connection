@@ -163,7 +163,7 @@ def test_inline_schema_and_fill_missing():
     [
         ({}, "offline"),
         ({"OPENAI_API_KEY": "sk-x"}, "openai"),
-        ({"AWS_BEARER_TOKEN_BEDROCK": "abc"}, "bedrock"),
+        ({"AWS_BEARER_TOKEN_BEDROCK": "abc"}, "mantle"),
         ({"AWS_ACCESS_KEY_ID": "a", "AWS_SECRET_ACCESS_KEY": "b"}, "bedrock"),
         ({"OPENAI_API_KEY": " "}, "offline"),
         ({"LLM_PROVIDER": "bedrock", "OPENAI_API_KEY": "sk-x"}, "bedrock"),
@@ -180,7 +180,7 @@ def test_bedrock_key_under_other_names_is_picked_up():
     notes = apply_env_aliases(env)
     assert env["AWS_BEARER_TOKEN_BEDROCK"] == "abc123"
     assert env["AWS_REGION"] == "ap-south-1"
-    assert detect_provider(env) == "bedrock"
+    assert detect_provider(env) == "mantle"
     assert notes and all("abc123" not in n for n in notes)
     seen = related_env_names(env)
     assert "OPENAI_API_KEY (empty)" in seen and all("abc123" not in s for s in seen)

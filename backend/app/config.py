@@ -134,13 +134,15 @@ def related_env_names(env: Mapping[str, str] = os.environ) -> list[str]:
 
 
 def detect_provider(env: Mapping[str, str] = os.environ) -> str:
-    """openai, bedrock or offline. LLM_PROVIDER wins; otherwise whichever credentials are present."""
+    """openai, mantle, bedrock or offline. LLM_PROVIDER wins; otherwise whichever credentials are present."""
     chosen = (env.get("LLM_PROVIDER") or "").strip().lower()
-    if chosen in ("openai", "bedrock", "offline"):
+    if chosen in ("openai", "bedrock", "mantle", "offline"):
         return chosen
     if (env.get("OPENAI_API_KEY") or "").strip():
         return "openai"
     aws_keys = (env.get("AWS_ACCESS_KEY_ID") or "").strip() and (env.get("AWS_SECRET_ACCESS_KEY") or "").strip()
+    if (env.get("AWS_BEARER_TOKEN_BEDROCK") or "").strip() and not (env.get("BEDROCK_MODEL_ID") or "").strip():
+        return "mantle"
     if (env.get("AWS_BEARER_TOKEN_BEDROCK") or "").strip() or (env.get("BEDROCK_MODEL_ID") or "").strip() or aws_keys:
         return "bedrock"
     return "offline"
@@ -168,11 +170,11 @@ class Settings:
 
     @property
     def llm_enabled(self) -> bool:
-        return self.llm_provider in ("openai", "bedrock")
+        return self.llm_provider in ("openai", "bedrock", "mantle")
 
     @property
     def model_name(self) -> str:
-        return {"openai": self.openai_model, "bedrock": self.bedrock_model}.get(self.llm_provider, "offline heuristics")
+        return {"openai": self.openai_model, "bedrock": self.bedrock_model, "mantle": "mantle (auto)"}.get(self.llm_provider, "offline heuristics")
 
 
 def bedrock_fallbacks(env: Mapping[str, str] = os.environ) -> tuple[str, ...]:
