@@ -770,7 +770,7 @@ class MantleModel(OpenAIModel):
             self.name = chosen or (text_models[0] if text_models else self.PREFERRED[0])
         log.info("Mantle: %s via %s (%d models listed)", self.name, self.base_url, len(self.available))
 
-    BACKUP_MODELS = ("openai.gpt-oss-120b", "openai.gpt-5.5", "openai.gpt-5.4", "qwen.qwen3-235b-a22b-2507")
+    BACKUP_MODELS = ("openai.gpt-oss-120b", "openai.gpt-5.5", "openai.gpt-5.4", "openai.gpt-5.6-sol", "qwen.qwen3-235b-a22b-2507", "deepseek.v3.2", "mistral.mistral-large-3-675b-instruct")
 
     def _routes(self):
         """(base_url, api, model) combinations to try, best first, until one works."""
@@ -804,7 +804,7 @@ class MantleModel(OpenAIModel):
                 text = self._ask(base, api, model, guide, payload)
             except Exception as exc:
                 status = getattr(exc, "status_code", None)
-                if status in (400, 403, 404, 405, 422) and len(routes) > 1:
+                if status in (400, 401, 403, 404, 405, 422) and len(routes) > 1:
                     last = exc
                     self.refused[f"{model} {api} {base.rsplit('.api.aws', 1)[-1]}"] = f"HTTP {status}"
                     continue
