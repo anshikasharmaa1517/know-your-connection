@@ -384,12 +384,34 @@ def inline_schema(model: type[BaseModel]) -> dict:
         if isinstance(node, dict):
             if "$ref" in node:
                 return expand(dict(defs[node["$ref"].split("/")[-1]]))
-            return {k: expand(v) for k, v in node.items() if k != "title"}
+            node = {k: expand(v) for k, v in node.items() if k != "title"}
+            return _nullable_as_type_list(node)
         if isinstance(node, list):
             return [expand(v) for v in node]
         return node
 
     return expand(schema)
+
+
+def _nullable_as_type_list(node: dict) -> dict:
+    """Rewrite {"anyOf": [{"type": "string"}, {"type": "null"}]} as {"type": ["string", "null"]}.
+    Both mean the same; the type-list form is what Amazon Nova's tool docs use."""
+    options = node.get("anyOf")
+    if not isinstance(options, list) or len(options) != 2:
+        return node
+    nulls = [o for o in options if o == {"type": "null"}]
+    others = [o for o in options if o != {"type": "null"}]
+    if len(nulls) != 1 or len(others) != 1 or not isinstance(others[0].get("type"), str):
+        return node
+    other = dict(others[0])
+    if other["type"] in ("object", "array"):
+        return node
+    merged = {k: v for k, v in node.items() if k != "anyOf"}
+    merged.update(other)
+    merged["type"] = [other["type"], "null"]
+    if "enum" in merged and None not in merged["enum"]:
+        merged["enum"] = list(merged["enum"]) + [None]
+    return merged
 
 
 def _allows_none(annotation) -> bool:
@@ -542,11 +564,19 @@ class BedrockModel(HostedModel):
 
     provider = "bedrock"
 
+    # Errors that mean "this account can't use this model", where another model may work.
+    SWITCH_ON = {"AccessDeniedException", "ResourceNotFoundException", "ValidationException"}
+
     def __init__(self, client=None):
         super().__init__()
+        import threading
+
         self.name = self.settings.bedrock_model
         self.embed_model = self.settings.bedrock_embed_model
         self._embed_ok = bool(self.embed_model)
+        self._fallbacks = [m for m in self.settings.bedrock_fallback_models if m != self.name]
+        self.refused: dict[str, str] = {}  # model id -> error code, for /api/health/model
+        self._switch_lock = threading.Lock()
         if client is None:
             import boto3
             from botocore.config import Config
@@ -560,8 +590,7 @@ class BedrockModel(HostedModel):
 
     def _parse(self, instructions: str, payload: str, schema: type[BaseModel]):
         tool = "record_" + re.sub(r"(?<!^)(?=[A-Z])", "_", schema.__name__).lower()
-        response = self.client.converse(
-            modelId=self.name,
+        response = self._converse(
             system=[{"text": instructions}],
             messages=[{"role": "user", "content": [{"text": payload}]}],
             toolConfig={
@@ -583,6 +612,23 @@ class BedrockModel(HostedModel):
                 data = block["toolUse"].get("input") or {}
                 return schema.model_validate(fill_missing(data, schema))
         raise RuntimeError(f"model did not return {schema.__name__} (stopReason={response.get('stopReason')})")
+
+    def _converse(self, **request):
+        while True:
+            model = self.name
+            try:
+                return self.client.converse(modelId=model, **request)
+            except Exception as exc:
+                code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
+                if code not in self.SWITCH_ON:
+                    raise
+                with self._switch_lock:
+                    if self.name == model:  # another thread may have switched already
+                        if not self._fallbacks:
+                            raise
+                        self.refused[model] = code
+                        self.name = self._fallbacks.pop(0)
+                        log.warning("Bedrock refused %s (%s: %s). Switching to %s.", model, code, exc, self.name)
 
     def _embed_one(self, text: str) -> list[float]:
         body = json.dumps({"inputText": text[:8000] or " ", "dimensions": self.settings.embed_dim, "normalize": True})

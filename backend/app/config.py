@@ -158,6 +158,7 @@ class Settings:
     aws_region: str
     bedrock_model: str
     bedrock_embed_model: str
+    bedrock_fallback_models: tuple[str, ...]
     graph_prefix: str
     public_url: str
     static_dir: str
@@ -172,6 +173,26 @@ class Settings:
     @property
     def model_name(self) -> str:
         return {"openai": self.openai_model, "bedrock": self.bedrock_model}.get(self.llm_provider, "offline heuristics")
+
+
+def bedrock_fallbacks(env: Mapping[str, str] = os.environ) -> tuple[str, ...]:
+    """Models to try, in order, if AWS refuses the main one (for example Anthropic's use-case form
+    isn't filled in, or the AWS Marketplace subscription can't be created). Amazon Nova needs neither.
+    BEDROCK_FALLBACK_MODEL_IDS overrides this; set it to "none" to turn fallback off."""
+    raw = env.get("BEDROCK_FALLBACK_MODEL_IDS")
+    if raw is not None:
+        if raw.strip().lower() in ("", "none", "off"):
+            return ()
+        return tuple(m.strip() for m in raw.split(",") if m.strip())
+    region = (env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or "us-east-1").strip().lower()
+    models = ["global.amazon.nova-2-lite-v1:0"]
+    if region.startswith(("us-", "ca-")):
+        models.append("us.amazon.nova-2-lite-v1:0")
+    elif region.startswith("eu-"):
+        models.append("eu.amazon.nova-2-lite-v1:0")
+    elif region == "ap-northeast-1":
+        models.append("jp.amazon.nova-2-lite-v1:0")
+    return tuple(models)
 
 
 @lru_cache
@@ -197,6 +218,7 @@ def get_settings() -> Settings:
         bedrock_model=(os.getenv("BEDROCK_MODEL_ID") or "global.anthropic.claude-haiku-5-5").strip(),
         # Set BEDROCK_EMBED_MODEL_ID to an empty string to turn embeddings off.
         bedrock_embed_model=os.getenv("BEDROCK_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0").strip(),
+        bedrock_fallback_models=bedrock_fallbacks(),
         graph_prefix=os.getenv("CONNECTIONS_GRAPH_PREFIX", "connections"),
         public_url=os.getenv("CONNECTIONS_PUBLIC_URL", "").rstrip("/"),
         static_dir=os.getenv("CONNECTIONS_STATIC_DIR", default_static),

@@ -31,16 +31,20 @@ def drop_nones(value):
 
 
 class FakeBedrock:
-    def __init__(self, fail_embeddings=False, error=None):
+    def __init__(self, fail_embeddings=False, error=None, refuse=()):
         self.h = llm.HeuristicModel()
         self.converse_calls = []
         self.embed_calls = 0
         self.fail_embeddings = fail_embeddings
         self.error = error
+        self.refuse = set(refuse)
 
     def converse(self, *, modelId, system, messages, toolConfig, inferenceConfig):
         if self.error:
             raise self.error
+        if modelId in self.refuse:
+            raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": f"no access to {modelId}"}}, "Converse")
+        assert "anyOf" not in json.dumps(toolConfig), "nullable fields should be type lists"
         self.converse_calls.append({"model": modelId, "toolConfig": toolConfig})
         tool = toolConfig["tools"][0]["toolSpec"]["name"]
         assert toolConfig["toolChoice"] == {"tool": {"name": tool}}
@@ -195,3 +199,39 @@ def test_offline_model_check_lists_setting_names(client, monkeypatch):
     assert body["ok"] is False and body["provider"] == "offline"
     assert "BEDROCK_MODEL_IDX" in body["settings_seen"]
     assert "typo" not in str(body)
+
+
+def test_refused_claude_falls_back_to_nova(bedrock):
+    client, fake = bedrock
+    fake.refuse = {"global.anthropic.claude-haiku-5-5"}
+    llm.get_model().fallback = NoFallback()  # the fallback model must answer, not the keyword heuristics
+    check = client.get("/api/health/model").json()
+    assert check["ok"] is True
+    assert check["model"] == "global.amazon.nova-2-lite-v1:0"
+    assert check["fell_back_from"] == {"global.anthropic.claude-haiku-5-5": "AccessDeniedException"}
+    h, _ = signup(client, "Js")
+    client.post("/api/capture", headers=h, json={"text": "Met Priya Raman at the climate meetup."})
+    assert {c["model"] for c in fake.converse_calls} == {"global.amazon.nova-2-lite-v1:0"}
+
+
+def test_all_models_refused_reports_each(bedrock):
+    client, fake = bedrock
+    fake.refuse = {"global.anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0"}
+    r = client.get("/api/health/model")
+    assert r.status_code == 503 and r.json()["error"] == "AccessDeniedException"
+    assert set(r.json()["refused"]) == {"global.anthropic.claude-haiku-5-5", "global.amazon.nova-2-lite-v1:0"}
+
+
+@pytest.mark.parametrize(
+    "region,expected",
+    [
+        ("us-east-1", ("global.amazon.nova-2-lite-v1:0", "us.amazon.nova-2-lite-v1:0")),
+        ("ap-south-1", ("global.amazon.nova-2-lite-v1:0",)),
+        ("eu-west-1", ("global.amazon.nova-2-lite-v1:0", "eu.amazon.nova-2-lite-v1:0")),
+    ],
+)
+def test_fallback_list_by_region(region, expected):
+    from app.config import bedrock_fallbacks
+
+    assert bedrock_fallbacks({"AWS_REGION": region}) == expected
+    assert bedrock_fallbacks({"AWS_REGION": region, "BEDROCK_FALLBACK_MODEL_IDS": "none"}) == ()

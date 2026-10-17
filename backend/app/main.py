@@ -104,9 +104,13 @@ def health_model():
         return JSONResponse(
             status_code=503,
             content={"ok": False, "provider": model.provider, "model": model.name, "error": code,
-                     "hint": MODEL_HINTS.get(code, "See the server log for details.")},
+                     "hint": MODEL_HINTS.get(code, "See the server log for details."),
+                     "refused": getattr(model, "refused", {})},
         )
-    return {"ok": True, "provider": model.provider, "model": model.name, "sample": [n.label for n in plan.needs]}
+    out = {"ok": True, "provider": model.provider, "model": model.name, "sample": [n.label for n in plan.needs]}
+    if getattr(model, "refused", None):
+        out["fell_back_from"] = model.refused
+    return out
 
 
 @app.post("/api/session")
