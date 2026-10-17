@@ -19,9 +19,9 @@ from .linkedin import ExportError, parse_upload
 from .llm import get_model
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("cirql")
+log = logging.getLogger("connections")
 
-app = FastAPI(title="Cirql", version="0.1.0")
+app = FastAPI(title="Connections", version="0.1.0")
 
 _boot = get_settings()
 log.info("FalkorDB: %s", describe_falkordb_url(_boot.falkordb_url))
@@ -97,7 +97,7 @@ async def upload_linkedin(file: UploadFile = File(...), v: Viewer = Depends(view
 
 
 SAMPLE_CSV = os.getenv(
-    "CIRQL_SAMPLE_CSV",
+    "CONNECTIONS_SAMPLE_CSV",
     os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "samples", "Connections.csv")),
 )
 

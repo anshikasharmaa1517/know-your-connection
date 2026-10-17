@@ -68,7 +68,7 @@ export function Wordmark({ size = 22 }: { size?: number }) {
         <circle cx="16" cy="16" r="6" fill="var(--close)" />
         <circle cx="25.6" cy="8.4" r="3.2" fill="var(--keep)" />
       </svg>
-      Cirql
+      Connections
     </span>
   )
 }

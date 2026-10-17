@@ -132,7 +132,7 @@ export function ImportView({ go }: { go: (t: Tab) => void }) {
           )}
         </div>
         <p className="tiny faint">
-          Only the file you upload is read. Cirql never signs in to LinkedIn or looks at anyone else's profile.
+          Only the file you upload is read. We never sign in to LinkedIn or look at anyone else's profile.
         </p>
       </div>
     )

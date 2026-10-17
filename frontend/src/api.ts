@@ -1,8 +1,8 @@
 export type User = { id: string; name: string; handle: string }
 export type Account = { token: string; user: User }
 
-const ACCOUNTS = 'cirql.accounts'
-const CURRENT = 'cirql.current'
+const ACCOUNTS = 'connections.accounts'
+const CURRENT = 'connections.current'
 
 function read<T>(key: string, fallback: T): T {
   try {

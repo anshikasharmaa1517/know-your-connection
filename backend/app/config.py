@@ -97,13 +97,13 @@ def get_settings() -> Settings:
         embed_model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
         embed_dim=int(os.getenv("OPENAI_EMBED_DIM", "1536")),
         transcribe_model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"),
-        graph_prefix=os.getenv("CIRQL_GRAPH_PREFIX", "cirql"),
-        public_url=os.getenv("CIRQL_PUBLIC_URL", "").rstrip("/"),
-        static_dir=os.getenv("CIRQL_STATIC_DIR", default_static),
+        graph_prefix=os.getenv("CONNECTIONS_GRAPH_PREFIX", "connections"),
+        public_url=os.getenv("CONNECTIONS_PUBLIC_URL", "").rstrip("/"),
+        static_dir=os.getenv("CONNECTIONS_STATIC_DIR", default_static),
         # How many people the ranker sends to the LLM for one goal.
-        rank_pool=int(os.getenv("CIRQL_RANK_POOL", "40")),
+        rank_pool=int(os.getenv("CONNECTIONS_RANK_POOL", "40")),
         # Scores below this are not shown as relevant at all.
-        relevance_floor=int(os.getenv("CIRQL_RELEVANCE_FLOOR", "35")),
+        relevance_floor=int(os.getenv("CONNECTIONS_RELEVANCE_FLOOR", "35")),
         # A need with no person scoring at least this much becomes a gap.
-        gap_threshold=int(os.getenv("CIRQL_GAP_THRESHOLD", "60")),
+        gap_threshold=int(os.getenv("CONNECTIONS_GAP_THRESHOLD", "60")),
     )

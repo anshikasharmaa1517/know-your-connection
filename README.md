@@ -1,13 +1,13 @@
-# Cirql
+# Connections
 
 A personal CRM where AI agents walk your relationship graph, built on **FalkorDB** for Graph Hacks (WeMakeDevs x FalkorDB, Oct 2026).
 
-You meet thirty new people a month and remember a third of them. LinkedIn shows connections with no context, and the friend across the table who knows exactly who you need never mentions it. Cirql fixes both without scraping anyone:
+You meet thirty new people a month and remember a third of them. LinkedIn shows connections with no context, and the friend across the table who knows exactly who you need never mentions it. Connections fixes both without scraping anyone:
 
 1. **Import.** Upload the export LinkedIn gives you of your own connections. Every row becomes a card. Nobody is added until you swipe: right to keep, up for your inner circle, left to skip.
 2. **Capture.** A 30 second memo after you meet someone becomes people, facts, intents, promises and ties in your graph, each pointing back at the memo that produced it.
 3. **Aim.** Set a goal ("summer 2027 VC internship") and your network re-ranks around it, with a reason and receipts per person. Change the goal, the ranking rebuilds. Close it, the ranking disappears. Open goals also reorder the import deck so the connections that fit come first.
-4. **Find the gap.** When a goal needs a kind of person you have no path to, Cirql says so: "No warm path to climate-tech VC."
+4. **Find the gap.** When a goal needs a kind of person you have no path to, the app says so: "No warm path to climate-tech VC."
 5. **Ask the network.** Your agent sends a redacted request to friends. Each friend's agent searches only its owner's graph and answers with a count and a strength, no names. The friend picks someone privately, that person writes their own card, and only then do you see them, with a three-way intro drafted.
 
 Rules enforced in code, not on a slide: an agent never reads another user's graph; every step that moves someone toward a new person needs a human click; the only thing about a third person that ever crosses accounts is a card that person wrote; relationships never decay and nobody gets a worth score; every suggestion has a receipt.
@@ -20,8 +20,8 @@ FalkorDB is the only datastore. Everything is Cypher.
 
 | What | How |
 | --- | --- |
-| Per-user isolation | Every account gets its own FalkorDB graph, `cirql_user_<id>`. Request handlers only ever open the signed-in user's graph (`auth.graph_of`). Separate graphs are separate keys, so there is no query that can wander into someone else's network. |
-| Cross-user protocol | One shared graph, `cirql_shared`, holds accounts, friendships, requests, replies (count and strength only) and opt-in cards. |
+| Per-user isolation | Every account gets its own FalkorDB graph, `connections_user_<id>`. Request handlers only ever open the signed-in user's graph (`auth.graph_of`). Separate graphs are separate keys, so there is no query that can wander into someone else's network. |
+| Cross-user protocol | One shared graph, `connections_shared`, holds accounts, friendships, requests, replies (count and strength only) and opt-in cards. |
 | Multi-hop warm paths | Ranking walks `(:Me)-[:KNOWS]->(p)` and `(:Me)-[:KNOWS]->(via)-[:KNOWS]-(p)`, so someone you heard about in a memo shows up as "warm path via Kabir Singh (cofounder)". |
 | Vector search | With an OpenAI key, people get `text-embedding-3-small` embeddings in a FalkorDB vector index (`CREATE VECTOR INDEX ... cosine`). Large networks are shortlisted with `db.idx.vector.queryNodes` per need before the model scores them. |
 | Full-text | `db.idx.fulltext.createNodeIndex('Person', ...)` over name, company, position and headline. |
@@ -98,7 +98,7 @@ The `Dockerfile` builds one container that serves the API and the web app. Any c
 | `FALKORDB_PASSWORD` | your instance password, any characters |
 | `OPENAI_API_KEY` | `sk-...` |
 | `OPENAI_MODEL` | `gpt-5.4-mini` (any model with structured outputs) |
-| `CIRQL_PUBLIC_URL` | `https://cirql.example.com` (used in opt-in links) |
+| `CONNECTIONS_PUBLIC_URL` | `https://connections.example.com` (used in opt-in links) |
 | `PORT` | set by most hosts; defaults to 8000 |
 
 Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis://falkordb:<password>@<host>:<port>`). Set the health check path to `/api/health`. If it fails, the server log names the FalkorDB host it tried (password hidden) and the reason: a `ConnectionError` means a wrong host or port, or the instance is stopped; an `AuthenticationError` means a wrong username or password.
@@ -115,7 +115,7 @@ Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis:/
 
 ## What we say about privacy, and what we don't
 
-Per-user graphs isolate each network by construction, and the Exchange never writes a third person's details to the shared graph until they write their own card. That is the claim. Cirql does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Data sent to OpenAI for extraction and ranking follows OpenAI's API terms.
+Per-user graphs isolate each network by construction, and the Exchange never writes a third person's details to the shared graph until they write their own card. That is the claim. The app does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Data sent to OpenAI for extraction and ranking follows OpenAI's API terms.
 
 ## Layout
 

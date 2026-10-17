@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from .config import get_settings
 from .util import name_key, words
 
-log = logging.getLogger("cirql.llm")
+log = logging.getLogger("connections.llm")
 
 
 # --------------------------------------------------------------------------

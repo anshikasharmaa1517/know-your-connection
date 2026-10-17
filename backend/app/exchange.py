@@ -31,7 +31,7 @@ from .network import create_person
 from .users import friend_ids, user_by_id
 from .util import new_id, new_token, now_ms
 
-log = logging.getLogger("cirql.exchange")
+log = logging.getLogger("connections.exchange")
 
 
 class ExchangeError(ValueError):

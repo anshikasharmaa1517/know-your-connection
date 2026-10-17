@@ -22,7 +22,7 @@ from redis.exceptions import ResponseError
 
 from .config import get_settings
 
-log = logging.getLogger("cirql.db")
+log = logging.getLogger("connections.db")
 
 _USER_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 

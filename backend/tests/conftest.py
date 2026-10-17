@@ -5,9 +5,9 @@ import pytest
 
 # Tests run against a real FalkorDB (default redis://localhost:6379) with the
 # offline heuristic model, under their own graph prefix.
-os.environ["CIRQL_GRAPH_PREFIX"] = "cirqltest"
+os.environ["CONNECTIONS_GRAPH_PREFIX"] = "connectionstest"
 os.environ.pop("OPENAI_API_KEY", None)
-os.environ["CIRQL_STATIC_DIR"] = "/nonexistent"
+os.environ["CONNECTIONS_STATIC_DIR"] = "/nonexistent"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

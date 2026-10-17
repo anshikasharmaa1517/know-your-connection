@@ -17,7 +17,7 @@ services:
       FALKORDB_URL: redis://falkordb:6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
-      CIRQL_PUBLIC_URL: ${CIRQL_PUBLIC_URL:-http://localhost:8000}
+      CONNECTIONS_PUBLIC_URL: ${CONNECTIONS_PUBLIC_URL:-http://localhost:8000}
 
 volumes:
   falkordb-data:

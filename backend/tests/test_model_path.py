@@ -57,7 +57,7 @@ class FakeEmbeddings:
 @pytest.fixture()
 def model_client(monkeypatch, store):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
-    monkeypatch.setenv("CIRQL_RANK_POOL", "6")
+    monkeypatch.setenv("CONNECTIONS_RANK_POOL", "6")
     get_settings.cache_clear()
     s = db.Store()
     db.set_store(s)
