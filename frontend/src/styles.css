@@ -1748,3 +1748,21 @@ mark {
   font-size: 1.15rem;
 }
 .need-chip { margin: 4px 0 2px; font-size: 0.75rem; }
+
+.map-edge-friend-hit {
+  stroke: var(--keep);
+  stroke-dasharray: 3 4;
+  opacity: 0.55;
+}
+
+.map-node-hit circle:first-child {
+  fill: var(--keep-soft);
+  stroke: var(--keep);
+  stroke-dasharray: 3 2;
+}
+
+.map-legend .key-hit {
+  background: var(--keep-soft);
+  border-color: var(--keep);
+  border-style: dashed;
+}

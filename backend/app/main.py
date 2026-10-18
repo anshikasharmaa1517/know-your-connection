@@ -403,6 +403,17 @@ def ask_network(gid: str, gap_id: str, depth: int = 2, v: Viewer = Depends(viewe
     )
 
 
+@app.post("/api/goals/{gid}/ask")
+def ask_network_for_goal(gid: str, depth: int = 2, v: Viewer = Depends(viewer)):
+    """Run friends' agents for a whole goal (used by the goal map). Gaps, if any, come first."""
+    g = graph_of(v)
+    goal = goals_mod._goal(g, gid)
+    plan = goals_mod._plan_from(goal)
+    gap = one(g, "MATCH (:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap) RETURN gap.need AS need LIMIT 1", {"gid": gid})
+    need = gap["need"] if gap else (plan.needs[0].label if plan.needs else goal["text"])
+    return search_mod.ask_network(get_store(), v.id, plan=plan, gap_need=need, goal=goal["text"], depth=3 if depth >= 3 else 2)
+
+
 @app.post("/api/goals/{gid}/reopen")
 def reopen_goal(gid: str, v: Viewer = Depends(viewer)):
     return goals_mod.reopen_goal(graph_of(v), gid)

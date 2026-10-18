@@ -13,7 +13,21 @@ type Node = {
   notes: number
 }
 type Snapshot = { people: Node[]; ties: { a: string; b: string; relation: string | null }[]; relevant: { id: string; goal_id: string; score: number }[] }
-type Friend = { id: string; name: string }
+type Friend = { name: string; handle: string }
+export type FriendHit = {
+  key: string
+  name: string
+  position: string
+  company: string
+  headline: string
+  url: string
+  degree: number
+  score: number
+  reason: string
+  paths: { name: string; kind: string; handle?: string }[][]
+}
+export type AgentRun = { friends: Friend[]; people: FriendHit[] }
+type HitPlaced = FriendHit & { x: number; y: number; angle: number }
 
 type Placed = Node & { x: number; y: number; angle: number; r: number; ring: 'close' | 'known' | 'via'; via?: string }
 
@@ -86,9 +100,20 @@ function labelProps(p: { x: number; y: number; angle: number }, offset: number) 
   }
 }
 
-export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: string) => void }) {
+export function NetworkMap({
+  goalId,
+  onOpen,
+  agents,
+  onAgents,
+}: {
+  goalId: string
+  onOpen: (id: string) => void
+  agents?: AgentRun
+  onAgents?: (r: AgentRun) => void
+}) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
-  const friends: Friend[] = []
+  const [agentState, setAgentState] = useState<'idle' | 'running' | 'failed'>('idle')
+  const friends: Friend[] = agents?.friends ?? []
   const goal = goalId
   const [q, setQ] = useState('')
   const [zoom, setZoom] = useState(1)
@@ -112,6 +137,18 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
     })
   }, [goalId])
 
+  // Friends' agents run on their own the first time the map opens for a goal.
+  useEffect(() => {
+    if (agents || agentState !== 'idle') return
+    setAgentState('running')
+    api<AgentRun>(`/api/goals/${encodeURIComponent(goalId)}/ask`, { method: 'POST' })
+      .then((r) => {
+        onAgents?.(r)
+        setAgentState('idle')
+      })
+      .catch(() => setAgentState('failed'))
+  }, [agents, agentState, goalId, onAgents])
+
   useEffect(() => {
     const el = box.current
     if (el) {
@@ -126,7 +163,21 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
   const people = Object.values(lay.placed)
   const hasVia = people.some((p) => p.ring === 'via')
   const rFriends = (hasVia ? lay.rVia : R_KNOWN + (lay.levels - 1) * BAND) + 70
-  const R = (friends.length ? rFriends : hasVia ? lay.rVia : rFriends - 40) + 62
+  // Each friend sits on the outer ring; the people their agent found fan out behind them.
+  const friendAngle = (i: number) => (i / Math.max(friends.length, 1)) * TAU + Math.PI / 4
+  const hits: HitPlaced[] = []
+  const hitRows = Math.max(1, ...friends.map((f) => Math.ceil(((agents?.people ?? []).filter((h) => h.paths[0]?.[0]?.handle === f.handle || h.paths[0]?.[0]?.name === f.name).length) / 9)))
+  friends.forEach((f, i) => {
+    const mine = (agents?.people ?? []).filter((h) => h.paths[0]?.[0]?.handle === f.handle || (!h.paths[0]?.[0]?.handle && h.paths[0]?.[0]?.name === f.name))
+    const span = Math.min((TAU / Math.max(friends.length, 1)) * 0.85, Math.max(0.35, mine.length * 0.11))
+    mine.forEach((h, j) => {
+      const a = friendAngle(i) - span / 2 + (span * (j + 0.5)) / Math.max(mine.length, 1)
+      const r = rFriends + 85 + (j % hitRows) * 34
+      hits.push({ ...h, ...polar(r, a), angle: a })
+    })
+  })
+  const rOuter = hits.length ? rFriends + 85 + (hitRows - 1) * 34 : rFriends
+  const R = (friends.length ? rOuter : hasVia ? lay.rVia : rFriends - 40) + 62
   const score: Record<string, number> = {}
   if (goal) snap.relevant.filter((r) => r.goal_id === goal).forEach((r) => (score[r.id] = r.score))
   const term = q.trim().toLowerCase()
@@ -135,10 +186,15 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
   const dimming = Boolean(term)
   const showAllLabels = people.length <= 90
   const litCount = people.filter(lit).length
-  const hovered = hover ? lay.placed[hover] : null
+  const hoveredHit = hover ? hits.find((h) => `h:${h.key}` === hover) : undefined
+  const hovered = hover ? (lay.placed[hover] ?? (hoveredHit ? { ...hoveredHit, id: hover, ring: 'hit' as const } : null)) : null
 
-  if (!people.length) {
-    return <p className="muted">No one fits this goal yet, so there is nothing to map.</p>
+  if (!people.length && !friends.length) {
+    return (
+      <p className="muted">
+        {agentState === 'running' ? "Asking your friends' agents..." : 'No one fits this goal yet, so there is nothing to map.'}
+      </p>
+    )
   }
 
   return (
@@ -178,9 +234,13 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
             ) : null,
           )}
           {friends.map((f, i) => {
-            const a = (i / friends.length) * TAU + Math.PI / 4
-            const p = polar(rFriends, a)
-            return <line key={`fe${f.id}`} x1={0} y1={0} x2={p.x} y2={p.y} className="map-edge map-edge-friend" />
+            const p = polar(rFriends, friendAngle(i))
+            return <line key={`fe${f.handle}`} x1={0} y1={0} x2={p.x} y2={p.y} className="map-edge map-edge-friend" />
+          })}
+          {hits.map((h) => {
+            const i = friends.findIndex((f) => f.handle === h.paths[0]?.[0]?.handle || f.name === h.paths[0]?.[0]?.name)
+            const p = polar(rFriends, friendAngle(Math.max(i, 0)))
+            return <line key={`he${h.key}`} x1={p.x} y1={p.y} x2={h.x} y2={h.y} className={`map-edge map-edge-friend-hit ${dimming && !lit(h as any) ? 'dim' : ''}`} />
           })}
 
           {/* people */}
@@ -211,17 +271,42 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
             )
           })}
 
-          {friends.map((f, i) => {
-            const a = (i / friends.length) * TAU + Math.PI / 4
-            const p = polar(rFriends, a)
+          {hits.map((h) => {
+            const on = !dimming || lit(h as any)
+            const r = 7 + (h.score / 100) * 9
+            const open = () => h.url && window.open(h.url, '_blank', 'noopener')
             return (
-              <g key={f.id} className="map-friend">
+              <g
+                key={h.key}
+                className={`map-node map-node-hit ${on ? '' : 'dim'}`}
+                onClick={open}
+                onMouseEnter={() => setHover(`h:${h.key}`)}
+                onMouseLeave={() => setHover(null)}
+                tabIndex={0}
+                role="button"
+                aria-label={`${h.name}, ${[h.position, h.company].filter(Boolean).join(' at ')}, through ${h.paths[0]?.[0]?.name}`}
+                onKeyDown={(e) => e.key === 'Enter' && open()}
+              >
+                <circle cx={h.x} cy={h.y} r={r} />
+                {(hits.length <= 40 || (dimming && on)) && (
+                  <text {...labelProps(h, r + 5)} className="map-label">
+                    {h.name.split(' ')[0]}
+                  </text>
+                )}
+              </g>
+            )
+          })}
+
+          {friends.map((f, i) => {
+            const p = polar(rFriends, friendAngle(i))
+            return (
+              <g key={f.handle} className="map-friend">
                 <rect x={p.x - 18} y={p.y - 18} width={36} height={36} rx={10} />
                 <text x={p.x} y={p.y + 1} textAnchor="middle" dominantBaseline="middle" className="map-friend-initial">
                   {f.name[0]}
                 </text>
                 <text x={p.x} y={p.y + 36} textAnchor="middle" className="map-label">
-                  {f.name.split(' ')[0]}'s network
+                  {f.name.split(' ')[0]}
                 </text>
               </g>
             )
@@ -235,12 +320,15 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
 
           {hovered && (
             <g className="map-tip" pointerEvents="none">
-              <rect x={hovered.x + 12} y={hovered.y - 34} width={Math.max(hovered.name.length, (hovered.headline || '').slice(0, 40).length) * 8.4 + 24} height={50} rx={8} />
+              <rect x={hovered.x + 12} y={hovered.y - 34} width={Math.max(hovered.name.length, ((hovered.headline || '') + (hoveredHit ? ` via ${hoveredHit.paths[0]?.[0]?.name}` : '')).slice(0, 40).length) * 8.4 + 24} height={50} rx={8} />
               <text x={hovered.x + 22} y={hovered.y - 17} className="map-tip-name">
                 {hovered.name}
               </text>
               <text x={hovered.x + 22} y={hovered.y + 4} className="map-tip-sub">
-                {(hovered.headline || (hovered.ring === 'via' ? `Through ${lay.placed[hovered.via ?? '']?.name ?? 'someone'}` : '')).slice(0, 40)}
+                {(hoveredHit
+                  ? `Through ${hoveredHit.paths[0]?.[0]?.name}: ${[hoveredHit.position, hoveredHit.company].filter(Boolean).join(' at ')}`
+                  : hovered.headline || (hovered.ring === 'via' ? `Through ${lay.placed[(hovered as Placed).via ?? '']?.name ?? 'someone'}` : '')
+                ).slice(0, 40)}
               </text>
             </g>
           )}
@@ -270,14 +358,23 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
         </span>
         {friends.length > 0 && (
           <span>
-            <i className="key key-friend" /> Friend: search their contacts in Find
+            <i className="key key-friend" /> Friend
+          </span>
+        )}
+        {hits.length > 0 && (
+          <span>
+            <i className="key key-hit" /> Fits, through a friend (tap for LinkedIn)
           </span>
         )}
         <span>
           <i className="key key-note" /> Has your notes
         </span>
       </div>
-      <p className="tiny faint">You are in the middle. Green dots fit this goal, bigger means a better fit. Grey dots are who you'd go through. Tap anyone to open their card and add a note.</p>
+      {agentState === 'running' && <p className="small muted">Asking your friends' agents...</p>}
+      <p className="tiny faint">
+        You are in the middle. Green dots fit this goal, bigger means a better fit. Outside the ring are your friends, with the people their agents found. Tap
+        anyone of yours to open their card.
+      </p>
     </div>
   )
 }

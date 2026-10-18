@@ -76,3 +76,14 @@ def test_other_needs_of_the_goal_are_listed_after_the_gap(client):
         assert "Rajat Khanna" in {p["name"] for p in found["people"]}
     finally:
         llm.set_model(None)
+
+
+def test_goal_level_agents_for_the_map(client):
+    ha, a = signup(client, "Anshika")
+    hb, b = signup(client, "Jasmeet")
+    import_all(client, hb, "b")
+    befriend(client, ha, hb, b)
+    goal = client.post("/api/goals", headers=ha, json={"text": "SDE"}).json()
+    found = client.post(f"/api/goals/{goal['goal']['id']}/ask", headers=ha).json()
+    assert found["friends"] == [{"name": "Jasmeet", "handle": "jasmeet"}]
+    assert "Rajat Khanna" in {p["name"] for p in found["people"]}

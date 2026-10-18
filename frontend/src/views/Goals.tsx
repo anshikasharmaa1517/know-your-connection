@@ -3,7 +3,7 @@ import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
-import { NetworkMap } from '../components/NetworkMap'
+import { NetworkMap, type AgentRun } from '../components/NetworkMap'
 import type { Tab } from '../App'
 import { openFriends } from '../components/Friends'
 import { pathText, Scan, type Hop } from './Find'
@@ -38,6 +38,9 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
   const [open, setOpen] = useState<string | null>(null)
   const [showPast, setShowPast] = useState(false)
   const [view, setView] = useState<'list' | 'map'>('list')
+  // Friends' agent results per goal, shared by the gap cards and the map.
+  const [agents, setAgents] = useState<Record<string, AgentRun>>({})
+  const saveAgents = useCallback((gid: string, r: AgentRun) => setAgents((a) => ({ ...a, [gid]: r })), [])
   const toast = useToast()
 
   const loadList = useCallback(async () => {
@@ -262,7 +265,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
             <div className="gap" key={gap.id}>
               <h3>{gap.text}</h3>
               <p className="small muted">{gap.description}</p>
-              <GapAsk goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} />
+              <GapAsk goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} onResult={(r) => saveAgents(detail.goal.id, r)} />
             </div>
           ))}
 
@@ -283,7 +286,13 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
           )}
 
           {detail.goal.status === 'open' && view === 'map' && detail.ranking.length > 0 && (
-            <NetworkMap key={`${detail.goal.id}-${detail.goal.ranked_at}`} goalId={detail.goal.id} onOpen={setOpen} />
+            <NetworkMap
+              key={`${detail.goal.id}-${detail.goal.ranked_at}`}
+              goalId={detail.goal.id}
+              onOpen={setOpen}
+              agents={agents[detail.goal.id]}
+              onAgents={(r) => saveAgents(detail.goal.id, r)}
+            />
           )}
 
           {detail.goal.status === 'open' && (view === 'list' || detail.ranking.length === 0) && (
@@ -371,7 +380,7 @@ type AgentResult = {
 }
 
 /** "Ask your network": friends' agents search their own graphs for this gap, right away. */
-function GapAsk({ goalId, gapId, need }: { goalId: string; gapId: string; need: string; myName: string }) {
+function GapAsk({ goalId, gapId, need, onResult }: { goalId: string; gapId: string; need: string; myName: string; onResult: (r: AgentRun) => void }) {
   const [state, setState] = useState<'idle' | 'running' | 'done'>('idle')
   const [result, setResult] = useState<AgentResult | null>(null)
   const toast = useToast()
@@ -384,6 +393,7 @@ function GapAsk({ goalId, gapId, need }: { goalId: string; gapId: string; need: 
         new Promise((ok) => window.setTimeout(ok, 1200)),
       ])
       setResult(r)
+      onResult(r as unknown as AgentRun)
       setState('done')
     } catch (e: any) {
       toast(e.message)
