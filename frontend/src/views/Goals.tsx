@@ -335,7 +335,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                         </div>
                         <p>{r.reason}</p>
                         <div className="receipts" aria-label="Receipts">
-                          {r.receipts.map((rc, i) => (
+                          {r.receipts.filter((rc) => rc.source_kind !== 'web').map((rc, i) => (
                             <div className="receipt" key={i}>
                               {rc.text}
                               <div className="receipt-src">
@@ -354,6 +354,18 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                               </div>
                             </div>
                           ))}
+                          {r.receipts.some((rc) => rc.source_kind === 'web' && rc.url) && (
+                            <div className="web-sources tiny">
+                              Source:{' '}
+                              {r.receipts
+                                .filter((rc) => rc.source_kind === 'web' && rc.url)
+                                .map((rc, i) => (
+                                  <a key={i} href={rc.url} target="_blank" rel="noreferrer">
+                                    {rc.source}
+                                  </a>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </li>
