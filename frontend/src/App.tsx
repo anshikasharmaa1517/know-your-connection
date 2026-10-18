@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, currentAccount, forgetAccount, listAccounts, switchAccount, type User } from './api'
+import { AboutYou } from './components/AboutYou'
 import { Avatar, Wordmark } from './components/Ring'
 import { Icon, Sheet, ToastProvider } from './components/ui'
 import { FriendsView } from './views/FriendsView'
@@ -91,7 +92,7 @@ function Shell() {
     <div className="app">
       <header className="topbar">
         <Wordmark />
-        <button className="account-button" onClick={() => setAccountsOpen(true)} aria-label={`Signed in as ${me.user.name}. Switch account`}>
+        <button className="account-button" onClick={() => setAccountsOpen(true)} aria-label={`Signed in as ${me.user.name}. About you and accounts`}>
           <Avatar name={me.user.name} size={28} />
           {me.user.name.split(' ')[0]}
         </button>
@@ -117,7 +118,8 @@ function Shell() {
       </nav>
 
       {accountsOpen && (
-        <Sheet onClose={() => setAccountsOpen(false)} label="Accounts">
+        <Sheet onClose={() => setAccountsOpen(false)} label="Account">
+          <AboutYou />
           <h2>Accounts on this device</h2>
           <p className="small muted">
             Each account has its own graph. Switching is handy for demoing friends' agents between two people.

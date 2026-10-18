@@ -149,8 +149,6 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
         <p className="muted">Say what you're working toward and your network re-ranks around it.</p>
       </div>
 
-      <AboutYou />
-
       <form
         className={goals && goals.length > 0 ? 'compact-form' : 'stack'}
         onSubmit={(e) => {
@@ -644,68 +642,3 @@ function lookingFor(needs: { label: string; keywords: string[] }[]): string[] {
   return [...out, ...rest.slice(labels.length)].slice(0, 10)
 }
 
-
-/** Who you are, so "internship" means the right internship. Private to your own graph. */
-function AboutYou() {
-  const [about, setAbout] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
-  const [editing, setEditing] = useState(false)
-  const toast = useToast()
-  useEffect(() => {
-    api<{ about: string }>('/api/about')
-      .then((r) => {
-        setAbout(r.about)
-        setDraft(r.about)
-        setEditing(!r.about)
-      })
-      .catch(() => setAbout(''))
-  }, [])
-  if (about === null) return null
-  const save = async () => {
-    try {
-      const r = await api<{ about: string }>('/api/about', { method: 'PUT', body: { about: draft } })
-      setAbout(r.about)
-      setEditing(false)
-      toast('Saved. Re-rank a goal to use it.')
-    } catch (e: any) {
-      toast(e.message)
-    }
-  }
-  if (!editing) {
-    return (
-      <div className="about-line small">
-        <span className="muted">About you:</span> <span className="grow">{about}</span>
-        <button className="link-button small" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-      </div>
-    )
-  }
-  return (
-    <div className="panel stack about-card" style={{ gap: 8 }}>
-      <div className="section-title">About you</div>
-      <textarea
-        className="textarea"
-        rows={2}
-        maxLength={600}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder="SDE student in Bangalore, Python and Go, looking for a remote or UK internship for summer 2027"
-        aria-label="About you"
-      />
-      <p className="tiny faint" style={{ margin: 0 }}>
-        Private. Rankings use it to judge who actually fits you: role, skills, location, timing.
-      </p>
-      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
-        {about && (
-          <button className="btn btn-ghost btn-small" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
-        )}
-        <button className="btn btn-primary btn-small" onClick={save} disabled={draft.trim() === about}>
-          Save
-        </button>
-      </div>
-    </div>
-  )
-}

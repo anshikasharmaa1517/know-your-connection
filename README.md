@@ -132,7 +132,7 @@ Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis:/
 5. Open the account menu, add a second account ("Bhavya"), import the **Second sample set**, and add each other as friends by handle (Friends is in the same menu).
 6. Back as the first account, add the goal "SDE role at a product startup". If it shows "No warm path", tap **Ask your network**: Bhavya's agent searches her graph and lists the software engineers she knows, each with a score and a reason. No form, no approval.
 7. Find: search "SDE". Your own SDEs are 1st degree, Bhavya's are 2nd degree. Press **Try Pro** to walk 3rd degree through a friend's friend.
-8. Goals: write a line in **About you**, mark one suggestion Good fit and one Wrong, then **Re-rank**. The wrong one is gone and the accuracy line updates.
+8. Tap your profile icon and write a line in **About you**. On Goals, mark one suggestion Good fit and one Wrong, then **Re-rank**. The wrong one is gone and the accuracy line updates.
 9. Optional: open FalkorDB Browser and show that each account is its own graph.
 
 ## What we say about privacy, and what we don't
