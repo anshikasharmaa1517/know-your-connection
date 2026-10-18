@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, copy } from '../api'
+import { api } from '../api'
 import { Avatar } from '../components/Ring'
 import { Highlight, Spinner, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
@@ -47,15 +47,6 @@ export function pathText(path: Hop[]): string {
   return rest.length ? `Through ${head}, then ${rest.map((h) => h.name).join(', then ')}` : `Through ${head}`
 }
 
-export function introMessage(hit: Pick<Hit, 'name' | 'position' | 'company' | 'paths'>, myName: string): { to: string; text: string } {
-  const to = hit.paths[0]?.[0]?.name ?? ''
-  const role = [hit.position, hit.company].filter(Boolean).join(' at ')
-  const next = hit.paths[0]?.[1]?.name
-  const text = next
-    ? `Hi ${to.split(' ')[0]}, could you ask ${next.split(' ')[0]} whether they'd introduce me to ${hit.name}${role ? ` (${role})` : ''}? Happy to send a short blurb to pass along. Thanks, ${myName.split(' ')[0]}`
-    : `Hi ${to.split(' ')[0]}, I saw you're connected to ${hit.name}${role ? ` (${role})` : ''}. Would you be open to introducing us? Happy to send a short blurb you can forward. Thanks, ${myName.split(' ')[0]}`
-  return { to, text }
-}
 
 export function FindView({
   go: _go,
@@ -269,16 +260,14 @@ function Degree({
   )
 }
 
-function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: string }) {
+function HitList({ hits, query }: { hits: Hit[]; myName: string; query: string }) {
   const [all, setAll] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
-  const toast = useToast()
   const shown = all ? hits : hits.slice(0, SHOW)
   return (
     <div>
       {shown.map((h) => {
         const tie = h.degree === 1 ? (h.strength === 'close' ? 'close' : 'known') : h.degree === 2 ? 'via' : 'none'
-        const intro = h.degree > 1 ? introMessage(h, myName) : null
         return (
           <div key={h.key} className="person-row hit">
             <Avatar name={h.name} tie={tie} size={40} />
@@ -303,14 +292,6 @@ function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: 
                   {pathText(h.paths[0])}
                   {h.paths.length > 1 ? ` and ${h.paths.length - 1} more` : ''}
                 </span>
-              )}
-              {intro && (
-                <button
-                  className="link-button small"
-                  onClick={async () => toast((await copy(intro.text)) ? `Copied a message for ${intro.to.split(' ')[0]}` : 'Copy failed')}
-                >
-                  Ask {intro.to.split(' ')[0]} for an intro
-                </button>
               )}
             </span>
             <span className="hit-actions">

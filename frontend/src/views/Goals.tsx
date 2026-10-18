@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, copy, formatDate } from '../api'
+import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
 import { NetworkMap } from '../components/NetworkMap'
 import type { Tab } from '../App'
 import { openFriends } from '../components/Friends'
-import { introMessage, pathText, Scan, type Hop } from './Find'
+import { pathText, Scan, type Hop } from './Find'
 
 type GoalRow = { goal: { id: string; text: string; status: string; created_at: number }; people: number; gaps: number }
 
@@ -371,7 +371,7 @@ type AgentResult = {
 }
 
 /** "Ask your network": friends' agents search their own graphs for this gap, right away. */
-function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string; need: string; myName: string }) {
+function GapAsk({ goalId, gapId, need }: { goalId: string; gapId: string; need: string; myName: string }) {
   const [state, setState] = useState<'idle' | 'running' | 'done'>('idle')
   const [result, setResult] = useState<AgentResult | null>(null)
   const toast = useToast()
@@ -446,7 +446,6 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
         : `${finders(forGap)} for this gap.`
 
   const row = (h: AgentHit, showNeed: boolean) => {
-    const intro = introMessage(h, myName)
     return (
       <div className="person-row hit" key={h.key}>
         <Avatar name={h.name} tie={h.degree === 2 ? 'via' : 'none'} size={40} />
@@ -462,12 +461,6 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
           <span className="tiny faint" style={{ display: 'block' }}>
             {pathText(h.paths[0] ?? [])}
           </span>
-          <button
-            className="link-button small"
-            onClick={async () => toast((await copy(intro.text)) ? `Copied a message for ${intro.to.split(' ')[0]}` : 'Copy failed')}
-          >
-            Ask {intro.to.split(' ')[0]} for an intro
-          </button>
         </span>
         <span className="hit-actions">
           <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />
