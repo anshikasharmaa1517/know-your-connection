@@ -456,10 +456,6 @@ function GapAsk({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signal])
 
-  const tryPro = async () => {
-    await api('/api/settings', { method: 'PATCH', body: { plan: 'pro' } })
-    run(3)
-  }
 
   if (state === 'idle' || hidden) return null
   // In Map view the results are drawn on the map itself; only the scan shows here.
@@ -545,16 +541,7 @@ function GapAsk({
               Also ask friends of friends
             </button>
           )
-        ) : (
-          result.third.networks > 0 && (
-            <>
-              <button className="btn btn-quiet btn-small" onClick={tryPro}>
-                Ask friends of friends (Pro)
-              </button>
-              <span className="tiny faint">{result.third.networks} more networks. Demo plan switch, no payment.</span>
-            </>
-          )
-        )}
+        ) : null}
         <button className="btn btn-ghost btn-small" onClick={() => run(result.scanned.fof > 0 ? 3 : 2)}>
           Ask again
         </button>
