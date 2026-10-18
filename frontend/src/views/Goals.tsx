@@ -124,7 +124,7 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
         return (
           <>
             <div className="goal-bar">
-              {current.length > 0 && (
+              {current.length > 1 && (
                 <div className="goal-pills" role="group" aria-label="Your goals">
                   {current.map((g) => (
                     <button key={g.goal.id} className="goal-pill" aria-pressed={selected === g.goal.id} onClick={() => setSelected(g.goal.id)}>
@@ -133,6 +133,7 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
                   ))}
                 </div>
               )}
+              {current.length <= 1 && <span className="grow" />}
               {past.length > 0 && (
                 <button className="btn btn-ghost btn-small past-toggle" aria-expanded={showPast} onClick={() => setShowPast(!showPast)}>
                   {showPast ? 'Hide past goals' : `Past goals (${past.length})`}

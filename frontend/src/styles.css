@@ -1727,3 +1727,4 @@ mark {
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
 }
+.goal-bar > .grow { flex: 1; }
