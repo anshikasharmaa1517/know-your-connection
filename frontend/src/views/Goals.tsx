@@ -74,6 +74,23 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
     }
   }
 
+  const closeGoal = async () => {
+    if (!detail) return
+    setBusy(true)
+    try {
+      await api(`/api/goals/${detail.goal.id}/close`, { method: 'POST' })
+      const r = await api<{ goals: GoalRow[] }>('/api/goals')
+      setGoals(r.goals)
+      // Move on to the next open goal; a closed one only opens from Past goals.
+      setSelected(r.goals.find((g) => g.goal.status === 'open')?.goal.id ?? null)
+      toast('Goal closed. Find it under Past goals.')
+    } catch (e: any) {
+      toast(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const act = async (path: string, body?: unknown, method = 'POST') => {
     if (!detail) return
     setBusy(true)
@@ -215,7 +232,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                       <button className="btn btn-quiet btn-small" onClick={() => act('/rerank')} disabled={busy}>
                         {busy ? <Spinner /> : 'Re-rank'}
                       </button>
-                      <button className="btn btn-danger btn-small" onClick={() => act('/close')} disabled={busy}>
+                      <button className="btn btn-danger btn-small" onClick={closeGoal} disabled={busy}>
                         Close goal
                       </button>
                     </div>
