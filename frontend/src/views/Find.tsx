@@ -316,7 +316,26 @@ function HitList({ hits, query }: { hits: Hit[]; myName: string; query: string }
 
 const STAGES = ['Your contacts', "Your friends' contacts", 'Ordering by degree']
 
-export function Scan({ query, stages = STAGES, label = 'Looking for' }: { query: string; stages?: string[]; label?: string }) {
+export function Scan({
+  query,
+  stages = STAGES,
+  label = 'Looking for',
+  cycle,
+}: {
+  query: string
+  stages?: string[]
+  label?: string
+  /** Several things being looked for: shown one after another while the scan runs. */
+  cycle?: string[]
+}) {
+  const [turn, setTurn] = useState(0)
+  useEffect(() => {
+    if (!cycle || cycle.length < 2) return
+    const t = window.setInterval(() => setTurn((n) => n + 1), 800)
+    return () => window.clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycle?.length])
+  const shown = cycle && cycle.length ? cycle[turn % cycle.length] : query
   const [stage, setStage] = useState(0)
   useEffect(() => {
     const t = window.setInterval(() => setStage((s) => Math.min(s + 1, stages.length - 1)), 420)
@@ -335,7 +354,10 @@ export function Scan({ query, stages = STAGES, label = 'Looking for' }: { query:
         ))}
       </div>
       <p className="scan-label">
-        {label} <strong>{query.trim()}</strong>
+        {label}{' '}
+        <strong key={shown} className="scan-word">
+          {shown.trim()}
+        </strong>
       </p>
       <ol className="scan-stages">
         {stages.map((s, i) => (

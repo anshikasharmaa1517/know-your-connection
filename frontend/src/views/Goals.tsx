@@ -350,6 +350,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
               needs={(detail.gaps.length ? detail.gaps.map((g) => g.need) : detail.goal.needs.map((n) => n.label))}
               myName={myName}
               signal={askSignal}
+              lookingFor={lookingFor(detail.goal.needs)}
               showResults={view === 'list' || detail.ranking.length === 0}
               saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
               onResult={(r) => saveAgents(detail.goal.id, r)}
@@ -399,6 +400,7 @@ function GapAsk({
   needs,
   saved,
   signal,
+  lookingFor: cycleWords,
   showResults,
   onResult,
 }: {
@@ -407,6 +409,7 @@ function GapAsk({
   myName: string
   saved: AgentResult | null
   signal: number
+  lookingFor: string[]
   showResults: boolean
   onResult: (r: AgentRun) => void
 }) {
@@ -452,7 +455,7 @@ function GapAsk({
   // In Map view the results are drawn on the map itself; only the scan shows here.
   if (!showResults && state === 'done') return null
   if (state === 'running') {
-    return <Scan query={needs.length === 1 ? needs[0] : `${needs.length} kinds of people`} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
+    return <Scan query={needs[0] ?? 'people'} cycle={cycleWords.length ? cycleWords : needs} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
   }
   if (!result) return null
 
@@ -563,4 +566,27 @@ function formatWhen(ms: number): string {
   const sameDay = d.toDateString() === new Date().toDateString()
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   return sameDay ? `today at ${time}` : `${formatDate(ms)} at ${time}`
+}
+
+
+const VAGUE = new Set(['remote', 'work', 'job', 'jobs', 'role', 'roles', 'startup', 'company', 'team', 'senior', 'lead', 'manager', 'leader', 'hiring', 'people'])
+
+/** What the scan says it is looking for: the needs, then the role words behind them, shuffled. */
+function lookingFor(needs: { label: string; keywords: string[] }[]): string[] {
+  const labels = needs.map((n) => n.label)
+  const words = needs.flatMap((n) => n.keywords).filter((k) => k && !VAGUE.has(k.toLowerCase()) && k.length > 1)
+  const seen = new Set<string>()
+  const all = [...labels, ...words].filter((w) => {
+    const k = w.toLowerCase()
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  const rest = all.slice(labels.length).sort(() => Math.random() - 0.5)
+  const out: string[] = []
+  labels.forEach((l, i) => {
+    out.push(l)
+    if (rest[i]) out.push(rest[i])
+  })
+  return [...out, ...rest.slice(labels.length)].slice(0, 10)
 }
