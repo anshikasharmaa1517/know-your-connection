@@ -349,7 +349,7 @@ export function Scan({
         ))}
       </div>
       <p className="scan-label">
-        {label}{' '}
+        <span className="scan-fixed">{label}</span>
         <strong key={shown} className="scan-word">
           {shown.trim()}
         </strong>
