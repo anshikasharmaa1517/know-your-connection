@@ -334,39 +334,6 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                           )}
                         </div>
                         <p>{r.reason}</p>
-                        <div className="receipts" aria-label="Receipts">
-                          {r.receipts.filter((rc) => rc.source_kind !== 'web').map((rc, i) => (
-                            <div className="receipt" key={i}>
-                              {rc.text}
-                              <div className="receipt-src">
-                                {rc.source_kind === 'web' && rc.url ? (
-                                  <a href={rc.url} target="_blank" rel="noreferrer">
-                                    Web: {rc.source}
-                                  </a>
-                                ) : rc.source_kind === 'linkedin' ? (
-                                  'LinkedIn export'
-                                ) : rc.source_kind === 'memo' ? (
-                                  `Memo: ${rc.source}`
-                                ) : (
-                                  rc.source
-                                )}
-                                {rc.at ? `, ${formatDate(rc.at)}` : ''}
-                              </div>
-                            </div>
-                          ))}
-                          {r.receipts.some((rc) => rc.source_kind === 'web' && rc.url) && (
-                            <div className="web-sources tiny">
-                              Source:{' '}
-                              {r.receipts
-                                .filter((rc) => rc.source_kind === 'web' && rc.url)
-                                .map((rc, i) => (
-                                  <a key={i} href={rc.url} target="_blank" rel="noreferrer">
-                                    {rc.source}
-                                  </a>
-                                ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </li>
                   ))}
