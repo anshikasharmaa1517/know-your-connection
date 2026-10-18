@@ -358,6 +358,8 @@ type AgentHit = {
   paths: Hop[][]
   score: number
   reason: string
+  need: string
+  for_gap: boolean
 }
 type AgentResult = {
   need: string
@@ -417,26 +419,67 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
     )
   }
 
-  // Count per friend account (by handle), and name friends by handle when first names clash.
-  const byFriend: Record<string, number> = {}
-  result.people.forEach((p) => {
-    const hop = p.paths[0]?.[0] as (Hop & { handle?: string }) | undefined
-    if (hop?.kind === 'friend') {
-      const k = hop.handle ?? hop.name
-      byFriend[k] = (byFriend[k] ?? 0) + 1
-    }
-  })
+  // Name friends by handle when first names clash.
   const firsts = result.friends.map((f) => f.name.split(' ')[0].toLowerCase())
   const label = (f: { name: string; handle: string }) => {
     const first = f.name.split(' ')[0]
     return firsts.filter((x) => x === first.toLowerCase()).length > 1 ? `${first} (${f.handle})` : first
   }
-  const found = result.friends.filter((f) => (byFriend[f.handle] ?? 0) > 0)
+  const forGap = result.people.filter((p) => p.for_gap)
+  const forGoal = result.people.filter((p) => !p.for_gap)
+  const finders = (list: AgentHit[]) => {
+    const counts: Record<string, number> = {}
+    list.forEach((p) => {
+      const hop = p.paths[0]?.[0] as (Hop & { handle?: string }) | undefined
+      if (hop?.kind === 'friend') counts[hop.handle ?? hop.name] = (counts[hop.handle ?? hop.name] ?? 0) + 1
+    })
+    return result.friends
+      .filter((f) => counts[f.handle])
+      .map((f) => `${label(f)}'s agent found ${counts[f.handle]}`)
+      .join(', ')
+  }
   const summary =
     result.people.length === 0
       ? "Nobody in your friends' networks fits this yet."
-      : found.map((f) => `${label(f)}'s agent found ${byFriend[f.handle]}`).join(', ') +
-        (found.length < result.friends.length ? `. ${result.friends.length - found.length === 1 ? 'The other found' : 'Others found'} none.` : '.')
+      : forGap.length === 0
+        ? `No one fits this gap yet, but ${finders(forGoal).replace(/ found (\d+)/g, ' found $1')} who help with this goal.`
+        : `${finders(forGap)} for this gap.`
+
+  const row = (h: AgentHit, showNeed: boolean) => {
+    const intro = introMessage(h, myName)
+    return (
+      <div className="person-row hit" key={h.key}>
+        <Avatar name={h.name} tie={h.degree === 2 ? 'via' : 'none'} size={40} />
+        <span className="grow">
+          <span className="person-name">{h.name}</span>
+          <span className="small muted" style={{ display: 'block' }}>
+            {[h.position, h.company].filter(Boolean).join(' at ') || h.headline}
+          </span>
+          {showNeed && <span className="chip need-chip">{h.need}</span>}
+          <span className="small" style={{ display: 'block' }}>
+            {h.reason}
+          </span>
+          <span className="tiny faint" style={{ display: 'block' }}>
+            {pathText(h.paths[0] ?? [])}
+          </span>
+          <button
+            className="link-button small"
+            onClick={async () => toast((await copy(intro.text)) ? `Copied a message for ${intro.to.split(' ')[0]}` : 'Copy failed')}
+          >
+            Ask {intro.to.split(' ')[0]} for an intro
+          </button>
+        </span>
+        <span className="hit-actions">
+          <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />
+          {h.url && (
+            <a className="btn btn-ghost btn-small" href={h.url} target="_blank" rel="noreferrer" aria-label={`${h.name} on LinkedIn`}>
+              in
+            </a>
+          )}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className="stack agent-results" style={{ gap: 8 }}>
@@ -444,40 +487,15 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
         <strong>{summary}</strong>
         {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
-      {result.people.map((h) => {
-        const intro = introMessage(h, myName)
-        return (
-          <div className="person-row hit" key={h.key}>
-            <Avatar name={h.name} tie={h.degree === 2 ? 'via' : 'none'} size={40} />
-            <span className="grow">
-              <span className="person-name">{h.name}</span>
-              <span className="small muted" style={{ display: 'block' }}>
-                {[h.position, h.company].filter(Boolean).join(' at ') || h.headline}
-              </span>
-              <span className="small" style={{ display: 'block' }}>
-                {h.reason}
-              </span>
-              <span className="tiny faint" style={{ display: 'block' }}>
-                {pathText(h.paths[0] ?? [])}
-              </span>
-              <button
-                className="link-button small"
-                onClick={async () => toast((await copy(intro.text)) ? `Copied a message for ${intro.to.split(' ')[0]}` : 'Copy failed')}
-              >
-                Ask {intro.to.split(' ')[0]} for an intro
-              </button>
-            </span>
-            <span className="hit-actions">
-              <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />
-              {h.url && (
-                <a className="btn btn-ghost btn-small" href={h.url} target="_blank" rel="noreferrer" aria-label={`${h.name} on LinkedIn`}>
-                  in
-                </a>
-              )}
-            </span>
+      {forGap.map((h) => row(h, false))}
+      {forGoal.length > 0 && (
+        <>
+          <div className="section-title" style={{ marginTop: 6 }}>
+            Also helps with this goal
           </div>
-        )
-      })}
+          {forGoal.map((h) => row(h, true))}
+        </>
+      )}
       <div className="row row-wrap">
         {result.scanned.fof > 0 ? null : result.plan === 'pro' ? (
           result.third.networks > 0 && (

@@ -49,3 +49,30 @@ def test_unknown_gap_is_404(client):
     h, _ = signup(client, "Js")
     gid, _ = gap_of(client, h, "SDE")
     assert client.post(f"/api/goals/{gid}/gaps/nope/ask", headers=h).status_code == 404
+
+
+def test_other_needs_of_the_goal_are_listed_after_the_gap(client):
+    from app import llm
+    from app.llm import GoalPlan, HeuristicModel, Need
+
+    class TwoNeeds(HeuristicModel):
+        def plan_goal(self, text):
+            return GoalPlan(summary=text, needs=[
+                Need(label="career coach", description="x", keywords=["coach", "career"]),
+                Need(label="software engineer at a startup", description="x", keywords=["software", "engineer", "developer", "sde"]),
+            ])
+
+    llm.set_model(TwoNeeds())
+    try:
+        ha, a = signup(client, "Anshika")
+        hb, b = signup(client, "Jasmeet")
+        import_all(client, hb, "b")
+        befriend(client, ha, hb, b)
+        goal = client.post("/api/goals", headers=ha, json={"text": "i want a remote job"}).json()
+        coach_gap = next(g for g in goal["gaps"] if g["need"] == "career coach")
+        found = client.post(f"/api/goals/{goal['goal']['id']}/gaps/{coach_gap['id']}/ask", headers=ha).json()
+        # No coaches in Jasmeet's network, but the engineers who help the goal still show up.
+        assert not any(p["for_gap"] for p in found["people"])
+        assert "Rajat Khanna" in {p["name"] for p in found["people"]}
+    finally:
+        llm.set_model(None)

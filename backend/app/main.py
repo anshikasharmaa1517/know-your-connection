@@ -391,15 +391,15 @@ def ask_network(gid: str, gap_id: str, depth: int = 2, v: Viewer = Depends(viewe
     g = graph_of(v)
     found = one(
         g,
-        "MATCH (goal:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap {id:$id}) "
-        "RETURN goal.text AS goal, gap.need AS need, gap.description AS description, gap.keywords AS keywords",
+        "MATCH (goal:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap {id:$id}) RETURN goal AS goal, gap.need AS need",
         {"gid": gid, "id": gap_id},
     )
     if not found:
         raise HTTPException(status_code=404, detail="gap not found")
+    goal = found["goal"]
     return search_mod.ask_network(
-        get_store(), v.id, need=found["need"], description=found["description"] or "",
-        keywords=found["keywords"] or [], goal=found["goal"], depth=3 if depth >= 3 else 2,
+        get_store(), v.id, plan=goals_mod._plan_from(goal), gap_need=found["need"],
+        goal=goal["text"], depth=3 if depth >= 3 else 2,
     )
 
 

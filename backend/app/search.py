@@ -373,31 +373,55 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
 # model against the need, and only profile fields (name, title, company, link) are used,
 # never a friend's notes or memos.
 
-AGENT_POOL = 40
+AGENT_POOL = 60
 
 
-def ask_network(store: Store, uid: str, *, need: str, description: str, keywords: list[str], goal: str, depth: int = 2) -> dict:
-    from .goals import head_phrase  # local import: goals imports network, not search
-    from .llm import GoalPlan, Need
+def _need_phrases(need) -> tuple[list[str], set[str]]:
+    """All phrases for one need, and the role phrases that name it outright."""
+    from .goals import head_phrase
+
+    head = head_phrase(need.label)
+    spec = expand(head) if head else {"phrases": [], "must": []}
+    role = {_norm(p) for p in (spec["phrases"] or [head]) if p}
+    out: list[str] = []
+    for p in [*spec["phrases"], head, *[k.lower() for k in need.keywords]]:
+        p = _norm(p)
+        if p and len(p) > 1 and p not in GENERIC and p not in out:
+            out.append(p)
+    return out, role
+
+
+def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth: int = 2) -> dict:
+    """Friends' agents search their own graphs for everything a goal needs, starting with
+    the gap that was clicked. People for that gap come first; anyone else in their
+    networks who helps with the goal is listed after."""
+    from .goals import covers, match_need
 
     settings = settings_of(store, uid)
     net = reach(store, uid)
     third_allowed = settings["plan"] == THIRD_DEGREE_PLAN
-    head = head_phrase(need)
-    spec = expand(head) if head else {"phrases": [], "must": []}
-    phrases: list[str] = []
-    for p in [*spec["phrases"], head, *[k.lower() for k in keywords]]:
-        p = _norm(p)
-        if p and len(p) > 1 and p not in GENERIC and p not in phrases:
-            phrases.append(p)
     result = {
-        "need": need,
+        "need": gap_need,
         "plan": settings["plan"],
         "friends": [{"name": f["name"], "handle": f["handle"]} for f in net["friends"]],
         "scanned": {"friends": len(net["friends"]), "fof": 0},
         "third": {"locked": not third_allowed, "networks": len(net["fof"])},
         "people": [],
     }
+    gap = next((n for n in plan.needs if n.label.lower() == gap_need.lower()), None) or (plan.needs[0] if plan.needs else None)
+    needs = sorted(plan.needs, key=lambda n: n is not gap)  # the clicked gap first
+    phrases: list[str] = []
+    gap_roles: set[str] = set()
+    any_roles: set[str] = set()
+    scoring = plan.model_copy(deep=True)  # same needs, keywords widened with role aliases
+    for n, sn in zip(plan.needs, scoring.needs):
+        sn.keywords = list(dict.fromkeys([*sn.keywords, *_need_phrases(n)[0]]))[:24]
+    for n in needs:
+        ps, roles = _need_phrases(n)
+        any_roles |= roles
+        if n is gap:
+            gap_roles = roles
+        phrases.extend(p for p in ps if p not in phrases)
     if not phrases or not net["friends"]:
         return result
 
@@ -406,10 +430,8 @@ def ask_network(store: Store, uid: str, *, need: str, description: str, keywords
     c = _Collector(pattern, [])
     # Your own contacts first, so anyone you already know is left to the goal's ranking.
     c.add(_direct(store.user(uid), terms), 1, [], own=True)
-    friend_graphs = []
     for f in net["friends"]:
         g = store.user(f["id"])  # read only: profile fields, never their notes or facts
-        friend_graphs.append((f, g))
         c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend", "handle": f["handle"]}])
     if depth >= 3 and third_allowed:
         for ff in net["fof"]:
@@ -417,26 +439,33 @@ def ask_network(store: Store, uid: str, *, need: str, description: str, keywords
             c.add(_direct(g, terms), 3, [{"name": ff["through"][0], "kind": "friend"}, {"name": ff["name"], "kind": "friend"}])
         result["scanned"]["fof"] = len(net["fof"])
 
-    head_hits = {_norm(p) for p in (spec["phrases"] or [head])}
     candidates = [r for r in c.found.values() if r["degree"] > 1]
-    candidates.sort(key=lambda r: (r["degree"], -sum(m in head_hits for m in r["matched"]), -len(r["matched"])))
+    candidates.sort(
+        key=lambda r: (
+            r["degree"],
+            -sum(m in gap_roles for m in r["matched"]),
+            -sum(m in any_roles for m in r["matched"]),
+            -len(r["matched"]),
+        )
+    )
     candidates = candidates[:AGENT_POOL]
     if not candidates:
         return result
 
-    plan = GoalPlan(summary=goal, needs=[Need(label=need, description=description or need, keywords=phrases[:24])])
     payload = [
         {"id": r["key"], "name": r["name"], "headline": r["headline"] or ", ".join(filter(None, [r["position"], r["company"]])), "tie": "friend", "strength": None, "facts": []}
         for r in candidates
     ]
-    scores = {s.person_id: s for s in get_model().score_people(f"{goal}. Looking for: {need}", plan, payload).scores}
+    scores = {s.person_id: s for s in get_model().score_people(goal, scoring, payload).scores}
     floor = get_settings().relevance_floor
     people = []
     for r in candidates:
         s = scores.get(r["key"])
         if not s or s.score < floor:
             continue
-        people.append({**r, "score": max(0, min(100, int(s.score))), "reason": s.reason.strip()})
-    people.sort(key=lambda r: (r["degree"], -r["score"]))
+        need = match_need(s.need, plan)
+        for_gap = bool(gap) and (need.lower() == gap.label.lower() or covers(gap, {"headline": r["headline"], "position": r["position"]}, s.reason))
+        people.append({**r, "score": max(0, min(100, int(s.score))), "reason": s.reason.strip(), "need": need, "for_gap": for_gap})
+    people.sort(key=lambda r: (not r["for_gap"], r["degree"], -r["score"]))
     result["people"] = people
     return result
