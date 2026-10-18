@@ -397,10 +397,11 @@ def ask_network(gid: str, gap_id: str, depth: int = 2, v: Viewer = Depends(viewe
     if not found:
         raise HTTPException(status_code=404, detail="gap not found")
     goal = found["goal"]
-    return search_mod.ask_network(
+    result = search_mod.ask_network(
         get_store(), v.id, plan=goals_mod._plan_from(goal), gap_need=found["need"],
         goal=goal["text"], depth=3 if depth >= 3 else 2,
     )
+    return goals_mod.save_agents(g, gid, result, gap_id=gap_id)
 
 
 @app.post("/api/goals/{gid}/ask")
@@ -411,7 +412,8 @@ def ask_network_for_goal(gid: str, depth: int = 2, v: Viewer = Depends(viewer)):
     plan = goals_mod._plan_from(goal)
     gap = one(g, "MATCH (:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap) RETURN gap.need AS need LIMIT 1", {"gid": gid})
     need = gap["need"] if gap else (plan.needs[0].label if plan.needs else goal["text"])
-    return search_mod.ask_network(get_store(), v.id, plan=plan, gap_need=need, goal=goal["text"], depth=3 if depth >= 3 else 2)
+    result = search_mod.ask_network(get_store(), v.id, plan=plan, gap_need=need, goal=goal["text"], depth=3 if depth >= 3 else 2)
+    return goals_mod.save_agents(g, gid, result)
 
 
 @app.post("/api/goals/{gid}/reopen")

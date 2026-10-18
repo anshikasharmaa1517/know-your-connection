@@ -438,12 +438,36 @@ def get_goal(g: Graph, gid: str) -> dict:
     gaps = rows(
         g,
         "MATCH (:Goal {id:$id})-[:HAS_GAP]->(gap:Gap) "
-        "RETURN gap {.id, .need, .description, .text, .best_score, .request_id} AS gap",
+        "RETURN gap {.id, .need, .description, .text, .best_score, .request_id, .agents} AS gap",
         {"id": gid},
     )
     return {
         "goal": {k: goal.get(k) for k in ("id", "text", "summary", "status", "created_at", "ranked_at", "pool", "shortlist", "model")}
+        | {"agents": _load_agents(goal.get("agents"))}
         | {"needs": json.loads(goal["needs"])},
         "ranking": ranking,
-        "gaps": open_gaps(_plan_from(goal), ranking, [x["gap"] for x in gaps]),
+        "gaps": open_gaps(_plan_from(goal), ranking, [x["gap"] | {"agents": _load_agents(x["gap"].get("agents"))} for x in gaps]),
     }
+
+
+# --------------------------------------------------------------------------
+# Friends' agent results, kept on the goal so they survive leaving the page.
+
+
+def _load_agents(raw):
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def save_agents(g: Graph, gid: str, result: dict, gap_id: str | None = None) -> dict:
+    """Store the latest agent run on the goal (for the map) and on the gap that asked."""
+    result = {**result, "at": now_ms()}
+    blob = json.dumps(result, ensure_ascii=False)
+    run(g, "MATCH (goal:Goal {id:$gid}) SET goal.agents = $j", {"gid": gid, "j": blob})
+    if gap_id:
+        run(g, "MATCH (:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap {id:$id}) SET gap.agents = $j", {"gid": gid, "id": gap_id, "j": blob})
+    return result

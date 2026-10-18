@@ -87,3 +87,17 @@ def test_goal_level_agents_for_the_map(client):
     found = client.post(f"/api/goals/{goal['goal']['id']}/ask", headers=ha).json()
     assert found["friends"] == [{"name": "Jasmeet", "handle": "jasmeet"}]
     assert "Rajat Khanna" in {p["name"] for p in found["people"]}
+
+
+def test_agent_results_are_kept_with_the_goal(client):
+    ha, a = signup(client, "Anshika")
+    hb, b = signup(client, "Jasmeet")
+    import_all(client, hb, "b")
+    befriend(client, ha, hb, b)
+    gid, gap = gap_of(client, ha, "SDE")
+    ran = client.post(f"/api/goals/{gid}/gaps/{gap['id']}/ask", headers=ha).json()
+    assert ran["at"] and ran["people"]
+    later = client.get(f"/api/goals/{gid}", headers=ha).json()
+    kept = next(g for g in later["gaps"] if g["id"] == gap["id"])["agents"]
+    assert {p["name"] for p in kept["people"]} == {p["name"] for p in ran["people"]}
+    assert later["goal"]["agents"]["people"]

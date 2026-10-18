@@ -21,9 +21,9 @@ type Ranked = {
   strength: string | null
   receipts: Receipt[]
 }
-type Gap = { id: string; need: string; description: string; text: string; best_score: number; request_id?: string }
+type Gap = { id: string; need: string; description: string; text: string; best_score: number; request_id?: string; agents?: AgentResult | null }
 type GoalDetail = {
-  goal: { id: string; text: string; summary: string; status: string; needs: { label: string; description: string; keywords: string[] }[]; pool: number; shortlist: number; ranked_at: number }
+  goal: { id: string; text: string; summary: string; status: string; needs: { label: string; description: string; keywords: string[] }[]; pool: number; shortlist: number; ranked_at: number; agents?: AgentRun | null }
   ranking: Ranked[]
   gaps: Gap[]
 }
@@ -265,7 +265,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
             <div className="gap" key={gap.id}>
               <h3>{gap.text}</h3>
               <p className="small muted">{gap.description}</p>
-              <GapAsk goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} onResult={(r) => saveAgents(detail.goal.id, r)} />
+              <GapAsk key={gap.id} goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} saved={gap.agents ?? null} onResult={(r) => saveAgents(detail.goal.id, r)} />
             </div>
           ))}
 
@@ -290,7 +290,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
               key={`${detail.goal.id}-${detail.goal.ranked_at}`}
               goalId={detail.goal.id}
               onOpen={setOpen}
-              agents={agents[detail.goal.id]}
+              agents={agents[detail.goal.id] ?? detail.goal.agents ?? undefined}
               onAgents={(r) => saveAgents(detail.goal.id, r)}
             />
           )}
@@ -377,12 +377,27 @@ type AgentResult = {
   scanned: { friends: number; fof: number }
   third: { locked: boolean; networks: number }
   people: AgentHit[]
+  at?: number
 }
 
 /** "Ask your network": friends' agents search their own graphs for this gap, right away. */
-function GapAsk({ goalId, gapId, need, onResult }: { goalId: string; gapId: string; need: string; myName: string; onResult: (r: AgentRun) => void }) {
-  const [state, setState] = useState<'idle' | 'running' | 'done'>('idle')
-  const [result, setResult] = useState<AgentResult | null>(null)
+function GapAsk({
+  goalId,
+  gapId,
+  need,
+  saved,
+  onResult,
+}: {
+  goalId: string
+  gapId: string
+  need: string
+  myName: string
+  saved: AgentResult | null
+  onResult: (r: AgentRun) => void
+}) {
+  // Results from the last time you asked are kept with the goal, so they are here when you come back.
+  const [state, setState] = useState<'idle' | 'running' | 'done'>(saved ? 'done' : 'idle')
+  const [result, setResult] = useState<AgentResult | null>(saved)
   const toast = useToast()
 
   const run = async (depth = 2) => {
@@ -519,7 +534,16 @@ function GapAsk({ goalId, gapId, need, onResult }: { goalId: string; gapId: stri
         <button className="btn btn-ghost btn-small" onClick={() => run(result.scanned.fof > 0 ? 3 : 2)}>
           Ask again
         </button>
+        {result.at && <span className="tiny faint">Asked {formatWhen(result.at)}</span>}
       </div>
     </div>
   )
+}
+
+
+function formatWhen(ms: number): string {
+  const d = new Date(ms)
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return sameDay ? `today at ${time}` : `${formatDate(ms)} at ${time}`
 }
