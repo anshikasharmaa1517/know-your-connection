@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, formatDate } from '../api'
+import { api, currentAccount, formatDate } from '../api'
+import { NetworkMap } from '../components/NetworkMap'
 import { Avatar, tieOf } from '../components/Ring'
 import { Sheet, Spinner, useToast } from '../components/ui'
 import type { Tab } from '../App'
@@ -26,7 +27,22 @@ export function PeopleView({ go }: { go: (t: Tab) => void }) {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const [mode, setMode] = useState<'list' | 'map'>(() => {
+    try {
+      return localStorage.getItem('connections.peopleMode') === 'map' ? 'map' : 'list'
+    } catch {
+      return 'list'
+    }
+  })
   const toast = useToast()
+  const pick = (m: 'list' | 'map') => {
+    setMode(m)
+    try {
+      localStorage.setItem('connections.peopleMode', m)
+    } catch {
+      /* private mode */
+    }
+  }
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -50,6 +66,18 @@ export function PeopleView({ go }: { go: (t: Tab) => void }) {
           </p>
         )}
       </div>
+      <div className="segmented" role="tablist" aria-label="View">
+        <button role="tab" aria-selected={mode === 'list'} onClick={() => pick('list')}>
+          List
+        </button>
+        <button role="tab" aria-selected={mode === 'map'} onClick={() => pick('map')}>
+          Map
+        </button>
+      </div>
+      {mode === 'map' ? (
+        <NetworkMap me={currentAccount()?.user.name ?? 'You'} onOpen={setOpen} />
+      ) : (
+        <>
       <input
         className="input"
         type="search"
@@ -108,6 +136,8 @@ export function PeopleView({ go }: { go: (t: Tab) => void }) {
             </li>
           ))}
         </ul>
+      )}
+        </>
       )}
       {open && <PersonSheet id={open} onClose={() => setOpen(null)} />}
     </div>

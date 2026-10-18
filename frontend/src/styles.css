@@ -1442,3 +1442,251 @@ mark {
 .note-form {
   gap: 6px;
 }
+
+/* People map -------------------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--sunk);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.segmented button {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink-2);
+  padding: 6px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.segmented button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.map-controls {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 560px) {
+  .map-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.map {
+  position: relative;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  max-height: 78vh;
+}
+
+.map svg {
+  display: block;
+  min-width: 100%;
+  transition: width 0.25s ease;
+}
+
+.map-zoom {
+  position: sticky;
+  float: right;
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  margin: -46px 10px 10px 0;
+}
+
+.map-zoom .btn {
+  min-width: 36px;
+  background: var(--surface);
+}
+
+.map-ring {
+  fill: none;
+  stroke: var(--sunk);
+}
+
+.map-ring-close {
+  fill: color-mix(in srgb, var(--close-soft) 55%, transparent);
+  stroke: var(--close-soft);
+}
+
+.map-ring-via {
+  stroke: var(--line);
+  stroke-dasharray: 6 6;
+}
+
+.map-ring-friends {
+  stroke: var(--line);
+  stroke-dasharray: 2 6;
+}
+
+.map-group {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  fill: var(--ink-3);
+}
+
+.map-edge {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.map-edge-close {
+  stroke: var(--close);
+  stroke-width: 2;
+  opacity: 0.7;
+}
+
+.map-edge-via {
+  stroke: var(--ink-3);
+  stroke-dasharray: 3 4;
+}
+
+.map-edge-friend {
+  stroke: var(--focus);
+  stroke-dasharray: 2 6;
+  opacity: 0.6;
+}
+
+.map-edge.dim {
+  opacity: 0.12;
+}
+
+.map-node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.map-node circle:first-child {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2;
+  transition: r 0.25s;
+}
+
+.map-node-close circle:first-child {
+  fill: var(--close);
+  stroke: var(--close);
+}
+
+.map-node-via circle:first-child {
+  stroke: var(--ink-2);
+  stroke-dasharray: 3 2;
+}
+
+.map-node.hot circle:first-child {
+  fill: var(--keep);
+  stroke: var(--keep);
+}
+
+.map-node:hover circle:first-child,
+.map-node:focus-visible circle:first-child {
+  stroke: var(--focus);
+  stroke-width: 3;
+}
+
+.map-node:focus {
+  outline: none;
+}
+
+.map-node.dim {
+  opacity: 0.15;
+}
+
+.map-note-dot {
+  fill: var(--focus);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.map-label {
+  font-size: 15px;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+
+.map-me {
+  fill: var(--ink);
+}
+
+.map-me-label {
+  fill: var(--on-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.map-friend rect {
+  fill: var(--surface);
+  stroke: var(--focus);
+  stroke-width: 2;
+}
+
+.map-friend-initial {
+  fill: var(--focus);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.map-tip rect {
+  fill: var(--ink);
+  opacity: 0.94;
+}
+
+.map-tip-name {
+  fill: var(--on-ink);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.map-tip-sub {
+  fill: var(--on-ink);
+  opacity: 0.8;
+  font-size: 13px;
+}
+
+.map-legend .key {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+}
+
+.map-legend .key-close {
+  background: var(--close);
+  border-color: var(--close);
+}
+
+.map-legend .key-via {
+  border-style: dashed;
+  border-color: var(--ink-2);
+}
+
+.map-legend .key-friend {
+  border-radius: 4px;
+  border-color: var(--focus);
+}
+
+.map-legend .key-note {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--focus);
+}

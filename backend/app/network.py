@@ -249,8 +249,9 @@ def snapshot(g: Graph, limit: int = 400) -> dict:
     people = rows(
         g,
         "MATCH (p:Person) OPTIONAL MATCH (:Me)-[k:KNOWS]->(p) "
-        "RETURN p.id AS id, p.name AS name, p.headline AS headline, k.strength AS strength, "
-        "k IS NOT NULL AS direct LIMIT $limit",
+        "RETURN p.id AS id, p.name AS name, p.headline AS headline, p.company AS company, "
+        "p.position AS position, k.strength AS strength, k IS NOT NULL AS direct, "
+        "size([(p)<-[:ABOUT]-(f:Fact) | f]) AS notes LIMIT $limit",
         {"limit": limit},
     )
     ties = rows(g, "MATCH (a:Person)-[t:KNOWS]->(b:Person) RETURN a.id AS a, b.id AS b, t.relation AS relation")
