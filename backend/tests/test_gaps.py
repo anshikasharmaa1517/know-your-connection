@@ -64,3 +64,27 @@ def test_reopen_goal_reranks(client):
     assert closed["goal"]["status"] == "closed" and closed["ranking"] == []
     back = client.post(f"/api/goals/{gid}/reopen", headers=h).json()
     assert back["goal"]["status"] == "open" and back["ranking"]
+
+
+def test_head_phrase_and_title_cover():
+    from app.goals import covers, head_phrase
+
+    assert head_phrase("remote work recruiter") == "recruiter"
+    assert head_phrase("career coach for remote work") == "coach"
+    assert head_phrase("remote-first hiring manager") == "hiring manager"
+    assert head_phrase("senior remote software engineer") == "software engineer"
+    need = Need(label="remote work recruiter", description="x", keywords=["recruiter", "talent", "remote", "staffing", "placement"])
+    assert covers(need, {"headline": "Technical Recruiter at Brightpath Talent"}, "")
+    assert covers(need, {"headline": "Senior Recruiters Lead"}, "")
+    assert not covers(need, {"headline": "Hiring Manager at EarlyJobs"}, "early-stage remote roles")
+    coach = Need(label="career coach for remote work", description="x", keywords=["coach", "career", "remote", "mentor", "resume"])
+    assert not covers(coach, {"headline": "Hiring Manager at EarlyJobs"}, "He hires for early-stage remote roles.")
+
+
+def test_stale_gaps_are_hidden_on_read():
+    from app.goals import open_gaps
+
+    plan = PLAN
+    ranking = [{"person": {"headline": "Technical Recruiter at X"}, "score": 80, "reason": "Leads recruiting on the talent team", "need": "something else"}]
+    gaps = [{"id": "1", "need": "HR leader at remote-first company"}, {"id": "2", "need": "Hiring manager at a remote company"}]
+    assert [g["id"] for g in open_gaps(plan, ranking, gaps)] == ["2"]

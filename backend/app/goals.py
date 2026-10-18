@@ -219,11 +219,55 @@ def match_need(label: str, plan: GoalPlan) -> str:
     return best if best and best_overlap >= 0.5 else label
 
 
+_GENERIC_HEADS = {"manager", "engineer", "lead", "partner", "officer", "director", "specialist", "consultant", "executive", "associate", "leader", "developer"}
+_LINKER_RE = re.compile(r"\b(for|at|in|with|who|from|on|of)\b")
+
+
+def head_phrase(label: str) -> str:
+    """The role a need names: 'remote work recruiter' -> 'recruiter',
+    'career coach for remote work' -> 'coach', 'remote-first hiring manager' -> 'hiring manager'."""
+    core = _LINKER_RE.split((label or "").lower())[0]
+    words = [w for w in re.findall(r"[a-z0-9]+", core) if w]
+    if not words:
+        return ""
+    if words[-1].rstrip("s") in _GENERIC_HEADS and len(words) > 1:
+        return " ".join(words[-2:])
+    return words[-1]
+
+
+def _has_phrase(text: str, phrase: str) -> bool:
+    if not phrase:
+        return False
+    pattern = r"(?<![a-z0-9])" + r"[\s\-]*".join(re.escape(w) for w in phrase.split(" ")) + r"s?(?![a-z0-9])"
+    return re.search(pattern, text.lower()) is not None
+
+
 def covers(need, person: dict, reason: str) -> bool:
-    """Does this person plainly fit a need, judging by title, the ranking reason and notes?"""
-    text = " ".join([person.get("headline") or "", person.get("company") or "", reason] + [f["text"] for f in person.get("facts", [])])
+    """Does this person plainly fit a need: their title names the role, or the title,
+    ranking reason and notes hit enough of the need's keywords."""
+    title = " ".join([person.get("headline") or "", person.get("position") or ""])
+    if _has_phrase(title, head_phrase(need.label)):
+        return True
+    text = " ".join([title, person.get("company") or "", reason] + [f["text"] for f in person.get("facts", []) or []])
     hits = keyword_hits([k.lower() for k in need.keywords], text)
     return len(hits) >= (1 if len(need.keywords) < 4 else 2)
+
+
+def open_gaps(plan: GoalPlan, ranking: list[dict], gaps: list[dict]) -> list[dict]:
+    """Drop stored gaps that the current ranking already covers."""
+    threshold = get_settings().gap_threshold
+    needs = {n.label.lower(): n for n in plan.needs}
+    out = []
+    for gap in gaps:
+        need = needs.get((gap.get("need") or "").lower())
+        if need and any(
+            (r.get("score") or 0) >= threshold
+            and ((r.get("need") or "").lower() == need.label.lower() or covers(need, r["person"], r.get("reason") or ""))
+            for r in ranking
+        ):
+            continue
+        out.append(gap)
+    return out
 
 
 def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False):
@@ -398,5 +442,5 @@ def get_goal(g: Graph, gid: str) -> dict:
         "goal": {k: goal.get(k) for k in ("id", "text", "summary", "status", "created_at", "ranked_at", "pool", "shortlist", "model")}
         | {"needs": json.loads(goal["needs"])},
         "ranking": ranking,
-        "gaps": [x["gap"] for x in gaps],
+        "gaps": open_gaps(_plan_from(goal), ranking, [x["gap"] for x in gaps]),
     }
