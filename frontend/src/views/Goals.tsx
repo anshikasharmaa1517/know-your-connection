@@ -592,7 +592,7 @@ function GapAsk({
         <strong>{summary}</strong>
         {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
-      {agentPage.items.map((h) => row(h, true))}
+      {agentPage.items.map((h) => row(h, needs.length > 1))}
       <Pager {...agentPage} />
       {strongPeople.length > 0 && weakFriends > 0 && (
         <div className="row" style={{ justifyContent: 'center' }}>

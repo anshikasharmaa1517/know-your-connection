@@ -421,6 +421,7 @@ class HeuristicModel:
         return RoleQuery(label=label, phrases=[label.lower()] if label else [])
 
     def plan_goal(self, text: str) -> GoalPlan:
+        text = re.split(r"\s*(?:ABOUT ME:|I MARKED THESE)", text)[0]  # the goal itself, not the context around it
         label = re.sub(r"\s+", " ", text.strip()).rstrip(".")
         return GoalPlan(
             company_question="remote work policy" if re.search(r"\bremote\b", text, re.I) else None,
