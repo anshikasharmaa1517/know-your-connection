@@ -104,7 +104,7 @@ export function NetworkMap({
   goalId,
   onOpen,
   agents,
-  onAgents,
+  onAgents: _onAgents,
 }: {
   goalId: string
   onOpen: (id: string) => void
@@ -112,7 +112,8 @@ export function NetworkMap({
   onAgents?: (r: AgentRun) => void
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
-  const [agentState, setAgentState] = useState<'idle' | 'running' | 'failed'>('idle')
+  // Friends' people appear only after "Ask your network" has run for this goal.
+  const agentState = 'idle' as 'idle' | 'running'
   const friends: Friend[] = agents?.friends ?? []
   const goal = goalId
   const [q, setQ] = useState('')
@@ -136,18 +137,6 @@ export function NetworkMap({
       setSnap({ ...s, people: s.people.filter((p) => keep.has(p.id)) })
     })
   }, [goalId])
-
-  // Friends' agents run on their own the first time the map opens for a goal.
-  useEffect(() => {
-    if (agents || agentState !== 'idle') return
-    setAgentState('running')
-    api<AgentRun>(`/api/goals/${encodeURIComponent(goalId)}/ask`, { method: 'POST' })
-      .then((r) => {
-        onAgents?.(r)
-        setAgentState('idle')
-      })
-      .catch(() => setAgentState('failed'))
-  }, [agents, agentState, goalId, onAgents])
 
   useEffect(() => {
     const el = box.current
@@ -372,7 +361,7 @@ export function NetworkMap({
       </div>
       {agentState === 'running' && <p className="small muted">Asking your friends' agents...</p>}
       <p className="tiny faint">
-        You are in the middle. Green dots fit this goal, bigger means a better fit. Outside the ring are your friends, with the people their agents found. Tap
+        You are in the middle. Green dots fit this goal, bigger means a better fit. After you tap Ask your network, your friends and the people their agents found appear outside the ring. Tap
         anyone of yours to open their card.
       </p>
     </div>
