@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
-import { Spinner, useToast } from '../components/ui'
+import { Pager, Spinner, usePage, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
 import { NetworkMap, type AgentRun } from '../components/NetworkMap'
 import type { Tab } from '../App'
@@ -39,6 +39,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
   const [showPast, setShowPast] = useState(false)
   const [view, setView] = useState<'list' | 'map'>('list')
   const [askSignal, setAskSignal] = useState(0)
+  const rankPage = usePage(detail?.ranking ?? [])
   // Friends' agent results per goal, shared by the gap cards and the map.
   const [agents, setAgents] = useState<Record<string, AgentRun>>({})
   const saveAgents = useCallback((gid: string, r: AgentRun) => setAgents((a) => ({ ...a, [gid]: r })), [])
@@ -301,8 +302,9 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                   No one in your network fits yet. Keep more connections, add notes to people, or ask your network.
                 </p>
               ) : (
+                <>
                 <ol className="list">
-                  {detail.ranking.map((r) => (
+                  {rankPage.items.map((r) => (
                     <li className="rank" key={r.person.id}>
                       <Meter value={r.score} size={48} label={String(r.score)} tone={r.score >= 70 ? 'keep' : 'ink'} />
                       <div className="stack" style={{ gap: 4 }}>
@@ -338,6 +340,8 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                     </li>
                   ))}
                 </ol>
+                <Pager {...rankPage} />
+                </>
               )}
             </div>
           )}
@@ -435,6 +439,12 @@ function GapAsk({
   }
 
   const [hidden, setHidden] = useState(false)
+  // People who fill a gap first, then the rest; paged ten at a time.
+  const gapSet = new Set(needs.map((n) => n.toLowerCase()))
+  const sortedPeople = result
+    ? [...result.people].sort((a, b) => Number(!(a.for_gap || gapSet.has((a.need || '').toLowerCase()))) - Number(!(b.for_gap || gapSet.has((b.need || '').toLowerCase()))))
+    : []
+  const agentPage = usePage(sortedPeople)
   const first = useRef(signal)
   useEffect(() => {
     if (signal === first.current) return
@@ -476,9 +486,6 @@ function GapAsk({
     const first = f.name.split(' ')[0]
     return firsts.filter((x) => x === first.toLowerCase()).length > 1 ? `${first} (${f.handle})` : first
   }
-  const gapNeeds = new Set(needs.map((n) => n.toLowerCase()))
-  const forGap = result.people.filter((p) => p.for_gap || gapNeeds.has((p.need || '').toLowerCase()))
-  const forGoal = result.people.filter((p) => !forGap.includes(p))
   const finders = (list: AgentHit[]) => {
     const counts: Record<string, number> = {}
     list.forEach((p) => {
@@ -492,7 +499,6 @@ function GapAsk({
   }
   const summary =
     result.people.length === 0 ? "Nobody in your friends' networks fits this yet." : `${finders(result.people)}.`
-  const ordered = [...forGap, ...forGoal]
 
   const row = (h: AgentHit, showNeed: boolean) => {
     return (
@@ -530,7 +536,8 @@ function GapAsk({
         <strong>{summary}</strong>
         {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
-      {ordered.map((h) => row(h, true))}
+      {agentPage.items.map((h) => row(h, true))}
+      <Pager {...agentPage} />
       <div className="row row-wrap">
         {result.scanned.fof > 0 ? null : result.plan === 'pro' ? (
           result.third.networks > 0 && (

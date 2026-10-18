@@ -129,3 +129,33 @@ export function Highlight({ text, words }: { text: string; words: string[] }) {
     </>
   )
 }
+
+export const PAGE_SIZE = 10
+
+/** Keep a page index that resets when the list changes. */
+export function usePage<T>(items: T[], size = PAGE_SIZE) {
+  const [page, setPage] = useState(0)
+  const pages = Math.max(1, Math.ceil(items.length / size))
+  const current = Math.min(page, pages - 1)
+  useEffect(() => setPage(0), [items.length])
+  return { items: items.slice(current * size, current * size + size), page: current, pages, setPage, size, total: items.length }
+}
+
+export function Pager({ page, pages, setPage, size, total }: { page: number; pages: number; setPage: (p: number) => void; size: number; total: number }) {
+  if (pages <= 1) return null
+  const from = page * size + 1
+  const to = Math.min(total, from + size - 1)
+  return (
+    <nav className="pager" aria-label="Pages">
+      <button className="btn btn-quiet btn-small" disabled={page === 0} onClick={() => setPage(page - 1)}>
+        Previous
+      </button>
+      <span className="small muted">
+        {from}-{to} of {total}
+      </span>
+      <button className="btn btn-quiet btn-small" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>
+        Next
+      </button>
+    </nav>
+  )
+}

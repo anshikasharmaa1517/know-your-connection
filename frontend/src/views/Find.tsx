@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Avatar } from '../components/Ring'
-import { Highlight, Spinner, useToast } from '../components/ui'
+import { Highlight, Pager, Spinner, usePage, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
 import { openFriends } from '../components/Friends'
 import type { Tab } from '../App'
@@ -31,7 +31,6 @@ type Result = {
 }
 
 const SUGGESTIONS = ['SDE', 'Product manager', 'Recruiter', 'VC', 'Hiring intern', 'Wants a cofounder']
-const SHOW = 8
 
 /** Words in a note that match the search, for highlighting ("hiring" matches "hire"). */
 function noteWords(note: string, query: string): string[] {
@@ -261,9 +260,9 @@ function Degree({
 }
 
 function HitList({ hits, query }: { hits: Hit[]; myName: string; query: string }) {
-  const [all, setAll] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
-  const shown = all ? hits : hits.slice(0, SHOW)
+  const pg = usePage(hits)
+  const shown = pg.items
   return (
     <div>
       {shown.map((h) => {
@@ -305,11 +304,7 @@ function HitList({ hits, query }: { hits: Hit[]; myName: string; query: string }
         )
       })}
       {open && <PersonSheet id={open} onClose={() => setOpen(null)} />}
-      {hits.length > SHOW && (
-        <button className="btn btn-ghost btn-small" onClick={() => setAll(!all)}>
-          {all ? 'Show fewer' : `Show all ${hits.length}`}
-        </button>
-      )}
+      <Pager {...pg} />
     </div>
   )
 }
