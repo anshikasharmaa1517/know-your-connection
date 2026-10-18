@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api, formatDate } from '../api'
 import { Avatar, tieOf } from '../components/Ring'
 import { Sheet, Spinner, useToast } from '../components/ui'
@@ -76,13 +76,10 @@ export function PeopleView({ go }: { go: (t: Tab) => void }) {
           <h3>{q ? 'No one matches that search' : 'No one here yet'}</h3>
           {!q && (
             <>
-              <p className="muted">Sort your LinkedIn connections or record a memo after you meet someone.</p>
+              <p className="muted">Sort your LinkedIn connections, then add notes to the people you keep.</p>
               <div className="row row-wrap">
                 <button className="btn btn-primary" onClick={() => go('import')}>
                   Import from LinkedIn
-                </button>
-                <button className="btn btn-quiet" onClick={() => go('capture')}>
-                  Record a memo
                 </button>
               </div>
             </>
@@ -121,10 +118,36 @@ const KIND_TITLE: Record<string, string> = { intent: 'What they want', promise: 
 
 export function PersonSheet({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<any>(null)
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
   const toast = useToast()
+  const load = useCallback(() => api(`/api/people/${id}`).then(setD).catch((e) => toast(e.message)), [id, toast])
   useEffect(() => {
-    api(`/api/people/${id}`).then(setD).catch((e) => toast(e.message))
-  }, [id, toast])
+    load()
+  }, [load])
+
+  const save = async () => {
+    if (!note.trim()) return
+    setSaving(true)
+    try {
+      await api(`/api/people/${id}/notes`, { method: 'POST', body: { text: note } })
+      setNote('')
+      await load()
+    } catch (e: any) {
+      toast(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async (fid: string) => {
+    try {
+      await api(`/api/people/${id}/notes/${fid}`, { method: 'DELETE' })
+      await load()
+    } catch (e: any) {
+      toast(e.message)
+    }
+  }
 
   return (
     <Sheet onClose={onClose} label={d?.person.name ?? 'Person'}>
@@ -167,6 +190,30 @@ export function PersonSheet({ id, onClose }: { id: string; onClose: () => void }
             </div>
           )}
 
+          <form
+            className="stack note-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              save()
+            }}
+          >
+            <div className="section-title">Add a note</div>
+            <div className="find-form">
+              <input
+                className="input"
+                value={note}
+                maxLength={500}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Hiring an intern, wants a cofounder, met at DevFest..."
+                aria-label={`Note about ${d.person.name}`}
+              />
+              <button className="btn btn-primary" disabled={!note.trim() || saving}>
+                Save
+              </button>
+            </div>
+            <p className="tiny faint">Notes stay in your graph. Find searches them, so this person shows up when you look for what they want.</p>
+          </form>
+
           {['intent', 'promise', 'fact'].map((kind) => {
             const items = d.facts.filter((f: any) => f.fact.kind === kind)
             if (!items.length) return null
@@ -177,7 +224,15 @@ export function PersonSheet({ id, onClose }: { id: string; onClose: () => void }
                   <div className="fact" key={f.fact.id}>
                     <span>{f.fact.text}</span>
                     <span className="tiny faint">
-                      From {f.source.title}, {formatDate(f.source.created_at)}
+                      {f.source.kind === 'note' ? 'Your note' : `From ${f.source.title}`}, {formatDate(f.source.created_at)}
+                      {f.source.kind === 'note' && (
+                        <>
+                          {' '}
+                          <button className="link-button tiny" onClick={() => remove(f.fact.id)}>
+                            Remove
+                          </button>
+                        </>
+                      )}
                     </span>
                   </div>
                 ))}

@@ -92,3 +92,37 @@ def test_find_needs_a_query(client):
     h, _ = signup(client, "Js")
     assert client.get("/api/find?q=%20", headers=h).status_code == 400
     assert client.patch("/api/settings", headers=h, json={"plan": "gold"}).status_code == 400
+
+
+def test_notes_make_people_findable(client):
+    h, _ = signup(client, "Js")
+    import_all(client, h, "a")
+    priya = next(p for p in client.get("/api/people?q=Priya", headers=h).json()["people"] if p["person"]["name"] == "Priya Raman")
+    pid = priya["person"]["id"]
+
+    before = client.get("/api/find?q=hiring intern", headers=h).json()
+    assert "Priya Raman" not in names(before["first"])
+
+    note = client.post(f"/api/people/{pid}/notes", headers=h, json={"text": "Wants to hire a summer intern for the climate fund"}).json()
+    assert note["kind"] == "intent"
+    found = client.get("/api/find?q=hiring intern", headers=h).json()
+    row = found["first"][0]
+    assert row["name"] == "Priya Raman" and "intern" in row["note"]
+    # The note shows on her card.
+    detail = client.get(f"/api/people/{pid}", headers=h).json()
+    assert any(f["fact"]["text"].startswith("Wants to hire") for f in detail["facts"])
+
+    client.delete(f"/api/people/{pid}/notes/{note['id']}", headers=h)
+    assert "Priya Raman" not in names(client.get("/api/find?q=hiring intern", headers=h).json()["first"])
+    assert client.post(f"/api/people/{pid}/notes", headers=h, json={"text": "  "}).status_code == 400
+
+
+def test_friends_notes_stay_private(client):
+    ha, a = signup(client, "Js")
+    hb, b = signup(client, "Bhavya")
+    import_all(client, hb, "b")
+    befriend(client, ha, hb, b)
+    farhan = next(p for p in client.get("/api/people?q=Farhan", headers=hb).json()["people"])
+    client.post(f"/api/people/{farhan['person']['id']}/notes", headers=hb, json={"text": "Looking for a cofounder"})
+    assert "Farhan" in str(client.get("/api/find?q=cofounder", headers=hb).json()["first"])
+    assert "Farhan" not in str(client.get("/api/find?q=cofounder", headers=ha).json())

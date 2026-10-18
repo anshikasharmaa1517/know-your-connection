@@ -20,7 +20,7 @@ import time
 from falkordb import Graph
 
 from .db import Store, rows
-from .llm import get_model
+from .llm import STOPWORDS, get_model
 from .users import reach, settings_of
 
 # Common searches resolved without a model call. Each group is one role; a query that equals
@@ -183,6 +183,44 @@ def _via_ties(g: Graph, terms: list[str]) -> list[dict]:
     )
 
 
+# Notes ------------------------------------------------------------------------
+# Your own notes ("hiring a summer intern") are searched word by word, so "hiring intern" finds
+# Priya even though her title says Associate. Only your graph: a friend's notes never leave theirs.
+
+_NOTE_SKIP = STOPWORDS | LINKERS | {"people", "person", "looking", "someone", "anyone", "who", "s"}
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ing", "ers", "er", "ed", "es", "s", "e"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def note_stems(query: str) -> list[str]:
+    words = _norm(query.replace("-", "")).split(" ")
+    return [_stem(w) for w in words if w and w not in _NOTE_SKIP and len(w) > 1]
+
+
+def _note_match(stems: list[str], notes: list[str]) -> str | None:
+    """The note that contains every search word, if any."""
+    for note in notes:
+        words = {_stem(w) for w in _norm(note.replace("-", "")).split(" ") if w}
+        if all(any(w.startswith(s) for w in words) for s in stems):
+            return note
+    return None
+
+
+def _noted(g: Graph, stems: list[str]) -> list[dict]:
+    return rows(
+        g,
+        "MATCH (:Me)-[k:KNOWS]->(p:Person)<-[:ABOUT]-(f:Fact) "
+        "WHERE f.kind <> 'promise' AND any(t IN $stems WHERE toLower(replace(f.text, '-', '')) CONTAINS t) "
+        f"RETURN {_PROFILE}, k.strength AS strength, collect(f.text) AS notes LIMIT 500",
+        {"stems": stems},
+    )
+
+
 def _key(r: dict) -> str:
     url = (r.get("url") or "").strip().lower().rstrip("/")
     if url:
@@ -226,11 +264,40 @@ class _Collector:
                 "strength": strength or r.get("strength") if own and degree == 1 else None,
                 "paths": [path] if path else [],
                 "matched": matched,
+                "note": None,
+            }
+
+    def add_notes(self, found: list[dict], stems: list[str]):
+        for r in found:
+            note = _note_match(stems, r.get("notes") or [])
+            if not note:
+                continue
+            key = _key(r)
+            existing = self.found.get(key)
+            if existing:
+                if existing["degree"] == 1:
+                    existing["note"] = note
+                continue
+            self.found[key] = {
+                "key": key,
+                "person_id": r["id"],
+                "name": r.get("name") or "",
+                "position": r.get("position") or "",
+                "company": r.get("company") or "",
+                "headline": r.get("headline") or "",
+                "url": r.get("url") or "",
+                "degree": 1,
+                "strength": r.get("strength"),
+                "paths": [],
+                "matched": [],
+                "note": note,
             }
 
     def by_degree(self, degree: int) -> list[dict]:
         out = [r for r in self.found.values() if r["degree"] == degree]
-        out.sort(key=lambda r: (r["strength"] != "close", -len(r["paths"]), -len(r["matched"]), r["name"].lower()))
+        out.sort(
+            key=lambda r: (r["note"] is None, r["strength"] != "close", -len(r["paths"]), -len(r["matched"]), r["name"].lower())
+        )
         return out
 
 
@@ -252,16 +319,20 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
         "second": [],
         "third": {"locked": not third_allowed, "networks": len(net["fof"]) + len(net["friends"]), "people": []},
     }
-    if not phrases:
+    stems = note_stems(query)
+    if not phrases and not stems:
         return result
 
-    pattern = _pattern(phrases)
-    terms = _prefilter_terms(phrases)
+    pattern = _pattern(phrases) if phrases else re.compile(r"(?!x)x")
+    terms = _prefilter_terms(phrases) if phrases else []
     c = _Collector(pattern, spec["must"])
 
-    # 1st degree: your own contacts.
+    # 1st degree: your own contacts, by title and by your notes about them.
     own = store.user(uid)
-    c.add(_direct(own, terms), 1, [], own=True)
+    if terms:
+        c.add(_direct(own, terms), 1, [], own=True)
+    if stems:
+        c.add_notes(_noted(own, stems), stems)
 
     # 2nd degree: memo ties in your graph, then each friend's contacts.
     for r in _via_ties(own, terms):
@@ -269,7 +340,7 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
             c.add([r], 2, [{"name": via, "kind": "contact"}])
     friend_graphs: list[tuple[dict, Graph]] = []
     for f in net["friends"]:
-        g = store.user(f["id"])  # read only: the profile fields above, nothing from notes or facts
+        g = store.user(f["id"])  # read only: profile fields, never their notes or facts
         friend_graphs.append((f, g))
         c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend"}])
 

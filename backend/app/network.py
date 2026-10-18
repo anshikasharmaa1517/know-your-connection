@@ -18,6 +18,8 @@ Nothing decays and no one gets a worth score.
 
 from __future__ import annotations
 
+import re
+
 from falkordb import Graph
 
 from .db import one, rows, run
@@ -292,3 +294,43 @@ def refresh_embeddings(g: Graph, limit: int = 2000) -> int:
             {"rows": payload[start : start + 200]},
         )
     return len(payload)
+
+
+# --------------------------------------------------------------------------
+# Notes on a person: a one-line Fact with its own Source, written from their card.
+
+_INTENT_RE = re.compile(
+    r"\b(hiring|hires?|looking for|wants?|seeking|raising|needs?|open to|searching for|building a team)\b", re.I
+)
+
+
+def add_note(g: Graph, pid: str, text: str) -> dict:
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    if not text:
+        raise ValueError("write a note first")
+    if len(text) > 500:
+        raise ValueError("keep a note under 500 characters")
+    if not one(g, "MATCH (p:Person {id:$pid}) RETURN p.id AS id", {"pid": pid}):
+        raise ValueError("person not found")
+    kind = "intent" if _INTENT_RE.search(text) else "fact"
+    sid, fid, now = new_id(), new_id(), now_ms()
+    run(
+        g,
+        "MATCH (p:Person {id:$pid}) "
+        "CREATE (s:Source {id:$sid, kind:'note', title:'Your note', text:$text, created_at:$now}) "
+        "CREATE (s)-[:REPORTED]->(f:Fact {id:$fid, kind:$kind, text:$text, created_at:$now})-[:ABOUT]->(p)",
+        {"pid": pid, "sid": sid, "fid": fid, "kind": kind, "text": text, "now": now},
+    )
+    mark_stale(g, [pid])
+    return {"id": fid, "kind": kind, "text": text}
+
+
+def delete_note(g: Graph, pid: str, fid: str) -> None:
+    run(
+        g,
+        "MATCH (s:Source)-[:REPORTED]->(f:Fact {id:$fid})-[:ABOUT]->(:Person {id:$pid}) "
+        "WITH s, f, s.kind = 'note' AS own DETACH DELETE f "
+        "WITH s, own WHERE own DETACH DELETE s",
+        {"fid": fid, "pid": pid},
+    )
+    mark_stale(g, [pid])

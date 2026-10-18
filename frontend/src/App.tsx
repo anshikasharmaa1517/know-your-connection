@@ -3,7 +3,6 @@ import { ApiError, api, currentAccount, forgetAccount, listAccounts, switchAccou
 import { Avatar, Wordmark } from './components/Ring'
 import { Icon, Sheet, ToastProvider } from './components/ui'
 import { AskView } from './views/Ask'
-import { CaptureView } from './views/Capture'
 import { FindView } from './views/Find'
 import { GoalsView } from './views/Goals'
 import { ImportView } from './views/Import'
@@ -11,7 +10,7 @@ import { OptInPage } from './views/OptIn'
 import { PeopleView } from './views/People'
 import { SignIn } from './views/SignIn'
 
-export type Tab = 'import' | 'people' | 'find' | 'goals' | 'capture' | 'ask'
+export type Tab = 'import' | 'people' | 'find' | 'goals' | 'ask'
 export type AskDraft = { need: string; description: string; gap_id?: string; goal_id?: string; goal: string }
 
 const TABS: { id: Tab; label: string }[] = [
@@ -19,7 +18,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'people', label: 'People' },
   { id: 'find', label: 'Find' },
   { id: 'goals', label: 'Goals' },
-  { id: 'capture', label: 'Capture' },
   { id: 'ask', label: 'Ask' },
 ]
 
@@ -110,7 +108,6 @@ function Shell() {
             }}
           />
         )}
-        {tab === 'capture' && <CaptureView serverVoice={me.voice} />}
         {tab === 'ask' && <AskView draft={draft} clearDraft={() => setDraft(null)} me={me.user} go={go} onInbox={setBadge} />}
       </main>
 

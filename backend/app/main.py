@@ -271,6 +271,21 @@ def person(pid: str, v: Viewer = Depends(viewer)):
     return detail
 
 
+class NoteIn(BaseModel):
+    text: str
+
+
+@app.post("/api/people/{pid}/notes")
+def add_note(pid: str, body: NoteIn, v: Viewer = Depends(viewer)):
+    return network.add_note(graph_of(v), pid, body.text)
+
+
+@app.delete("/api/people/{pid}/notes/{fid}")
+def delete_note(pid: str, fid: str, v: Viewer = Depends(viewer)):
+    network.delete_note(graph_of(v), pid, fid)
+    return {"ok": True}
+
+
 @app.get("/api/graph")
 def graph_snapshot(v: Viewer = Depends(viewer)):
     return network.snapshot(graph_of(v))

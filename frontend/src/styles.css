@@ -1429,3 +1429,16 @@ mark {
 .link-button:hover {
   text-decoration: underline;
 }
+
+.hit-note {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--close-soft);
+  color: var(--ink);
+}
+
+.note-form {
+  gap: 6px;
+}

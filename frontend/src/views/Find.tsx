@@ -16,6 +16,7 @@ type Hit = {
   strength: string | null
   paths: Hop[][]
   matched: string[]
+  note: string | null
 }
 type Result = {
   query: string
@@ -27,8 +28,15 @@ type Result = {
   third: { locked: boolean; networks: number; people: Hit[] }
 }
 
-const SUGGESTIONS = ['SDE', 'Product manager', 'Recruiter', 'Designer', 'VC', 'Data scientist']
+const SUGGESTIONS = ['SDE', 'Product manager', 'Recruiter', 'VC', 'Hiring intern', 'Wants a cofounder']
 const SHOW = 8
+
+/** Words in a note that match the search, for highlighting ("hiring" matches "hire"). */
+function noteWords(note: string, query: string): string[] {
+  const stem = (w: string) => w.toLowerCase().replace(/(ing|ers|er|ed|es|s|e)$/, '')
+  const want = query.split(/\s+/).filter((w) => w.length > 2).map(stem).filter((w) => w.length > 2)
+  return note.split(/[^A-Za-z0-9-]+/).filter((w) => want.some((q) => stem(w).startsWith(q)))
+}
 
 function pathText(path: Hop[]): string {
   if (!path.length) return ''
@@ -108,7 +116,7 @@ export function FindView({
     <div className="view">
       <div className="view-head">
         <h1>Find someone</h1>
-        <p className="muted">Search by role. People you know come first, then people your friends know. No request needed.</p>
+        <p className="muted">Search by role, or by anything you noted about someone. People you know come first, then people your friends know. No request needed.</p>
       </div>
 
       <form
@@ -163,6 +171,7 @@ export function FindView({
             hits={result.first}
             empty="No one you know directly fits this yet."
             myName={myName}
+            query={result.query}
           />
           <Degree
             n={2}
@@ -175,6 +184,7 @@ export function FindView({
                 : 'Add friends on the Ask tab to search the people they know.'
             }
             myName={myName}
+            query={result.query}
           />
 
           {result.scanned.friends === 0 && (
@@ -197,7 +207,7 @@ export function FindView({
                 <Spinner label="Searching 3rd degree" /> Walking {result.third.networks} more networks...
               </div>
             ) : result.third.people.length > 0 ? (
-              <HitList hits={result.third.people} myName={myName} />
+              <HitList hits={result.third.people} myName={myName} query={result.query} />
             ) : plan !== 'pro' ? (
               <div className="panel-sunk stack locked">
                 <p>
@@ -232,7 +242,9 @@ function Degree({
   hits,
   empty,
   myName,
+  query,
 }: {
+  query: string
   n: number
   title: string
   subtitle: string
@@ -250,12 +262,12 @@ function Degree({
         </div>
         {hits.length > 0 && <span className="chip">{hits.length}</span>}
       </div>
-      {hits.length ? <HitList hits={hits} myName={myName} /> : <p className="small muted">{empty}</p>}
+      {hits.length ? <HitList hits={hits} myName={myName} query={query} /> : <p className="small muted">{empty}</p>}
     </section>
   )
 }
 
-function HitList({ hits, myName }: { hits: Hit[]; myName: string }) {
+function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: string }) {
   const [all, setAll] = useState(false)
   const toast = useToast()
   const shown = all ? hits : hits.slice(0, SHOW)
@@ -272,6 +284,11 @@ function HitList({ hits, myName }: { hits: Hit[]; myName: string }) {
               <span className="small muted ellipsis" style={{ display: 'block' }}>
                 <Highlight text={[h.position, h.company].filter(Boolean).join(' at ')} words={h.matched} />
               </span>
+              {h.note && (
+                <span className="hit-note small">
+                  Your note: <Highlight text={h.note} words={noteWords(h.note, query)} />
+                </span>
+              )}
               {h.degree > 1 && (
                 <span className="tiny faint" style={{ display: 'block' }}>
                   {pathText(h.paths[0])}
