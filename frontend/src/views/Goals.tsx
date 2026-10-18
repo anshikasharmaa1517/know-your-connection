@@ -261,13 +261,30 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
             )}
           </div>
 
-          {detail.gaps.map((gap) => (
-            <div className="gap" key={gap.id}>
-              <h3>{gap.text}</h3>
-              <p className="small muted">{gap.description}</p>
-              <GapAsk key={gap.id} goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} saved={gap.agents ?? null} onResult={(r) => saveAgents(detail.goal.id, r)} />
+          {detail.gaps.length > 0 && (
+            <div className="gap">
+              <h3>{detail.gaps.length === 1 ? detail.gaps[0].text : 'No warm path yet to these people'}</h3>
+              {detail.gaps.length === 1 ? (
+                <p className="small muted">{detail.gaps[0].description}</p>
+              ) : (
+                <div className="needs">
+                  {detail.gaps.map((g) => (
+                    <span className="chip" key={g.id} title={g.description}>
+                      {g.need}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <GapAsk
+                key={detail.goal.id}
+                goalId={detail.goal.id}
+                needs={detail.gaps.map((g) => g.need)}
+                myName={myName}
+                saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
+                onResult={(r) => saveAgents(detail.goal.id, r)}
+              />
             </div>
-          ))}
+          )}
 
           {detail.goal.status === 'open' && detail.ranking.length > 0 && (
             <div className="spread">
@@ -383,14 +400,12 @@ type AgentResult = {
 /** "Ask your network": friends' agents search their own graphs for this gap, right away. */
 function GapAsk({
   goalId,
-  gapId,
-  need,
+  needs,
   saved,
   onResult,
 }: {
   goalId: string
-  gapId: string
-  need: string
+  needs: string[]
   myName: string
   saved: AgentResult | null
   onResult: (r: AgentRun) => void
@@ -404,7 +419,7 @@ function GapAsk({
     setState('running')
     try {
       const [r] = await Promise.all([
-        api<AgentResult>(`/api/goals/${goalId}/gaps/${gapId}/ask?depth=${depth}`, { method: 'POST' }),
+        api<AgentResult>(`/api/goals/${goalId}/ask?depth=${depth}`, { method: 'POST' }),
         new Promise((ok) => window.setTimeout(ok, 1200)),
       ])
       setResult(r)
@@ -429,7 +444,7 @@ function GapAsk({
     )
   }
   if (state === 'running') {
-    return <Scan query={need} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
+    return <Scan query={needs.length === 1 ? needs[0] : `${needs.length} kinds of people`} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
   }
   if (!result) return null
 
@@ -450,8 +465,9 @@ function GapAsk({
     const first = f.name.split(' ')[0]
     return firsts.filter((x) => x === first.toLowerCase()).length > 1 ? `${first} (${f.handle})` : first
   }
-  const forGap = result.people.filter((p) => p.for_gap)
-  const forGoal = result.people.filter((p) => !p.for_gap)
+  const gapNeeds = new Set(needs.map((n) => n.toLowerCase()))
+  const forGap = result.people.filter((p) => p.for_gap || gapNeeds.has((p.need || '').toLowerCase()))
+  const forGoal = result.people.filter((p) => !forGap.includes(p))
   const finders = (list: AgentHit[]) => {
     const counts: Record<string, number> = {}
     list.forEach((p) => {
@@ -467,8 +483,8 @@ function GapAsk({
     result.people.length === 0
       ? "Nobody in your friends' networks fits this yet."
       : forGap.length === 0
-        ? `No one fits this gap yet, but ${finders(forGoal).replace(/ found (\d+)/g, ' found $1')} who help with this goal.`
-        : `${finders(forGap)} for this gap.`
+        ? `No one fills ${needs.length === 1 ? 'this gap' : 'these gaps'} yet, but ${finders(forGoal).replace(/ found (\d+)/g, ' found $1')} who help with this goal.`
+        : `${finders(forGap)} who fill ${needs.length === 1 ? 'this gap' : 'these gaps'}.`
 
   const row = (h: AgentHit, showNeed: boolean) => {
     return (
@@ -505,7 +521,7 @@ function GapAsk({
         <strong>{summary}</strong>
         {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
-      {forGap.map((h) => row(h, false))}
+      {forGap.map((h) => row(h, needs.length > 1))}
       {forGoal.length > 0 && (
         <>
           <div className="section-title" style={{ marginTop: 6 }}>
