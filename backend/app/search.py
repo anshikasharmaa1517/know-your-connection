@@ -343,14 +343,14 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
     for f in net["friends"]:
         g = store.user(f["id"])  # read only: profile fields, never their notes or facts
         friend_graphs.append((f, g))
-        c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend"}])
+        c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend", "handle": f["handle"]}])
 
     # 3rd degree, on request and on the Pro plan.
     if depth >= 3 and third_allowed:
         for f, g in friend_graphs:
             for r in _via_ties(g, terms):
                 for via in r["via"][:2]:
-                    c.add([r], 3, [{"name": f["name"], "kind": "friend"}, {"name": via, "kind": "contact"}])
+                    c.add([r], 3, [{"name": f["name"], "kind": "friend", "handle": f["handle"]}, {"name": via, "kind": "contact"}])
         for ff in net["fof"]:
             g = store.user(ff["id"])
             path = [{"name": ff["through"][0], "kind": "friend"}, {"name": ff["name"], "kind": "friend"}]
@@ -393,7 +393,7 @@ def ask_network(store: Store, uid: str, *, need: str, description: str, keywords
     result = {
         "need": need,
         "plan": settings["plan"],
-        "friends": [f["name"] for f in net["friends"]],
+        "friends": [{"name": f["name"], "handle": f["handle"]} for f in net["friends"]],
         "scanned": {"friends": len(net["friends"]), "fof": 0},
         "third": {"locked": not third_allowed, "networks": len(net["fof"])},
         "people": [],
@@ -410,7 +410,7 @@ def ask_network(store: Store, uid: str, *, need: str, description: str, keywords
     for f in net["friends"]:
         g = store.user(f["id"])  # read only: profile fields, never their notes or facts
         friend_graphs.append((f, g))
-        c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend"}])
+        c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend", "handle": f["handle"]}])
     if depth >= 3 and third_allowed:
         for ff in net["fof"]:
             g = store.user(ff["id"])

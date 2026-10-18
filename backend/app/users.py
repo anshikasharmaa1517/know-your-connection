@@ -155,7 +155,7 @@ def reach(store: Store, uid: str) -> dict:
     friends_ = rows(
         shared,
         "MATCH (:User {id:$id})-[:FRIEND]->(f:User) WHERE coalesce(f.discoverable, true) "
-        "RETURN f.id AS id, f.name AS name ORDER BY f.name",
+        "RETURN f.id AS id, f.name AS name, f.handle AS handle ORDER BY f.name",
         {"id": uid},
     )
     fof = rows(

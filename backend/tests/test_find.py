@@ -43,7 +43,7 @@ def test_find_orders_by_degree_without_approval(client):
     assert "Aarav Shah" in first and "Aarav Shah" not in second
     assert "Hrithik Saxena" not in second and "Prerna Dutta" not in second
     row = next(r for r in found["second"] if r["name"] == "Nisha Arora")
-    assert row["paths"] == [[{"name": "Bhavya", "kind": "friend"}]]
+    assert row["paths"] == [[{"name": "Bhavya", "kind": "friend", "handle": "bhavya"}]]
     assert row["person_id"] is None and row["strength"] is None and row["url"]
     # Your own matches can be opened in People.
     assert all(r["person_id"] for r in found["first"])

@@ -362,7 +362,7 @@ type AgentHit = {
 type AgentResult = {
   need: string
   plan: 'free' | 'pro'
-  friends: string[]
+  friends: { name: string; handle: string }[]
   scanned: { friends: number; fof: number }
   third: { locked: boolean; networks: number }
   people: AgentHit[]
@@ -417,20 +417,32 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
     )
   }
 
+  // Count per friend account (by handle), and name friends by handle when first names clash.
   const byFriend: Record<string, number> = {}
   result.people.forEach((p) => {
-    const f = p.paths[0]?.[0]?.name
-    if (f) byFriend[f] = (byFriend[f] ?? 0) + 1
+    const hop = p.paths[0]?.[0] as (Hop & { handle?: string }) | undefined
+    if (hop?.kind === 'friend') {
+      const k = hop.handle ?? hop.name
+      byFriend[k] = (byFriend[k] ?? 0) + 1
+    }
   })
-  const summary = result.friends
-    .map((f) => `${f.split(' ')[0]}'s agent found ${byFriend[f] ?? 0}`)
-    .join(', ')
+  const firsts = result.friends.map((f) => f.name.split(' ')[0].toLowerCase())
+  const label = (f: { name: string; handle: string }) => {
+    const first = f.name.split(' ')[0]
+    return firsts.filter((x) => x === first.toLowerCase()).length > 1 ? `${first} (${f.handle})` : first
+  }
+  const found = result.friends.filter((f) => (byFriend[f.handle] ?? 0) > 0)
+  const summary =
+    result.people.length === 0
+      ? `Asked ${result.friends.length === 1 ? `${label(result.friends[0])}'s agent` : `${result.friends.length} friends' agents (${result.friends.map(label).join(', ')})`}. Nobody in their networks fits this yet.`
+      : found.map((f) => `${label(f)}'s agent found ${byFriend[f.handle]}`).join(', ') +
+        (found.length < result.friends.length ? `. ${result.friends.length - found.length === 1 ? 'The other found' : 'Others found'} none.` : '.')
 
   return (
     <div className="stack agent-results" style={{ gap: 8 }}>
       <p className="small">
-        <strong>{summary}.</strong>{' '}
-        {result.people.length === 0 ? 'Nobody in their networks fits this yet.' : 'Only their public profile was used, never their notes.'}
+        <strong>{summary}</strong>
+        {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
       {result.people.map((h) => {
         const intro = introMessage(h, myName)

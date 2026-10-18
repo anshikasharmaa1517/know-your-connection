@@ -25,7 +25,7 @@ def test_gap_runs_friends_agents_without_a_request(client):
     assert {"Nisha Arora", "Rajat Khanna"} <= names
     assert "Hrithik Saxena" not in names  # hardware, not software
     row = next(p for p in found["people"] if p["name"] == "Nisha Arora")
-    assert row["paths"] == [[{"name": "Bhavya", "kind": "friend"}]] and row["reason"] and row["score"] > 0
+    assert row["paths"] == [[{"name": "Bhavya", "kind": "friend", "handle": "bhavya"}]] and row["reason"] and row["score"] > 0
     # Nothing was posted to the shared graph and Bhavya was not asked to approve anything.
     assert client.get("/api/exchange/inbox", headers=hb).json()["requests"] == []
 
