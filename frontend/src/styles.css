@@ -1818,3 +1818,17 @@ mark {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px 0 8px;
+}
+
+.pager .small {
+  min-width: 72px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
