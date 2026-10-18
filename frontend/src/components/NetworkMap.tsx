@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type Simulation, type SimulationNodeDatum } from 'd3-force'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Spinner } from './ui'
 
-type Node = {
+/* A free-floating graph of the people who fit a goal, in the style of Obsidian's graph view:
+   physics layout, drag any node, scroll or pinch to zoom, drag the background to pan,
+   hover to light up the path back to you. Everything comes from FalkorDB:
+   your RELEVANT_TO edges, KNOWS ties, and friends' agent results. */
+
+type Person = {
   id: string
   name: string
   headline: string
@@ -12,7 +18,7 @@ type Node = {
   direct: boolean
   notes: number
 }
-type Snapshot = { people: Node[]; ties: { a: string; b: string; relation: string | null }[]; relevant: { id: string; goal_id: string; score: number }[] }
+type Snapshot = { people: Person[]; ties: { a: string; b: string; relation: string | null }[]; relevant: { id: string; goal_id: string; score: number }[] }
 type Friend = { name: string; handle: string }
 export type FriendHit = {
   key: string
@@ -27,84 +33,106 @@ export type FriendHit = {
   paths: { name: string; kind: string; handle?: string }[][]
 }
 export type AgentRun = { friends: Friend[]; people: FriendHit[] }
-type HitPlaced = FriendHit & { x: number; y: number; angle: number }
 
-type Placed = Node & { x: number; y: number; angle: number; r: number; ring: 'close' | 'known' | 'via'; via?: string }
+type Kind = 'me' | 'close' | 'known' | 'via' | 'friend' | 'hit'
+type GNode = SimulationNodeDatum & {
+  id: string
+  kind: Kind
+  name: string
+  sub: string
+  r: number
+  fit: boolean
+  notes?: number
+  personId?: string
+  url?: string
+}
+type GLink = { source: string | GNode; target: string | GNode; kind: 'direct' | 'close' | 'tie' | 'friend' | 'hit' }
 
-const TAU = Math.PI * 2
-const R_CLOSE = 110
-const R_KNOWN = 215
-const BAND = 40
+const end = (v: string | GNode) => (typeof v === 'string' ? v : v.id)
 
-function polar(r: number, a: number) {
-  return { x: r * Math.cos(a - Math.PI / 2), y: r * Math.sin(a - Math.PI / 2) }
+function build(snap: Snapshot, agents: AgentRun | undefined, goalId: string) {
+  const score: Record<string, number> = {}
+  snap.relevant.filter((r) => r.goal_id === goalId).forEach((r) => (score[r.id] = r.score))
+  const nodes: GNode[] = [{ id: 'me', kind: 'me', name: 'You', sub: '', r: 16, fit: false, fx: 0, fy: 0 }]
+  const links: GLink[] = []
+  const ids = new Set(snap.people.map((p) => p.id))
+
+  snap.people.forEach((p) => {
+    const s = score[p.id]
+    const kind: Kind = p.direct ? (p.strength === 'close' ? 'close' : 'known') : 'via'
+    nodes.push({
+      id: p.id,
+      kind,
+      name: p.name,
+      sub: p.headline || [p.position, p.company].filter(Boolean).join(' at '),
+      r: s !== undefined ? 6 + (s / 100) * 9 : 5,
+      fit: s !== undefined,
+      notes: p.notes,
+      personId: p.id,
+    })
+    if (p.direct) links.push({ source: 'me', target: p.id, kind: p.strength === 'close' ? 'close' : 'direct' })
+  })
+  // People you heard about hang off the contact you heard it from.
+  snap.ties.forEach((t) => {
+    if (ids.has(t.a) && ids.has(t.b)) links.push({ source: t.a, target: t.b, kind: 'tie' })
+  })
+  snap.people
+    .filter((p) => !p.direct && !snap.ties.some((t) => t.a === p.id || t.b === p.id))
+    .forEach((p) => links.push({ source: 'me', target: p.id, kind: 'tie' }))
+
+  ;(agents?.friends ?? []).forEach((f) => {
+    const fid = `f:${f.handle}`
+    nodes.push({ id: fid, kind: 'friend', name: f.name, sub: 'Friend', r: 11, fit: false })
+    links.push({ source: 'me', target: fid, kind: 'friend' })
+  })
+  ;(agents?.people ?? []).forEach((h) => {
+    const hop = h.paths[0]?.[0]
+    const friend = (agents?.friends ?? []).find((f) => f.handle === hop?.handle || f.name === hop?.name)
+    if (!friend) return
+    const hid = `h:${h.key}`
+    nodes.push({
+      id: hid,
+      kind: 'hit',
+      name: h.name,
+      sub: `Through ${friend.name.split(' ')[0]}: ${[h.position, h.company].filter(Boolean).join(' at ') || h.headline}`,
+      r: 5 + (h.score / 100) * 8,
+      fit: true,
+      url: h.url,
+    })
+    links.push({ source: `f:${friend.handle}`, target: hid, kind: 'hit' })
+  })
+  return { nodes, links }
 }
 
-function layout(snap: Snapshot) {
-  const close = snap.people.filter((p) => p.direct && p.strength === 'close')
-  const known = snap.people
-    .filter((p) => p.direct && p.strength !== 'close')
-    .sort((a, b) => (a.company || '~').localeCompare(b.company || '~') || a.name.localeCompare(b.name))
-  const via = snap.people.filter((p) => !p.direct)
-
-  const placed: Record<string, Placed> = {}
-  close.forEach((p, i) => {
-    const a = (i / Math.max(close.length, 1)) * TAU + 0.2
-    placed[p.id] = { ...p, ...polar(R_CLOSE, a), angle: a, r: R_CLOSE, ring: 'close' }
+/** Parent of each node on its shortest path back to you, for path highlighting. */
+function parents(links: GLink[]) {
+  const adj: Record<string, string[]> = {}
+  links.forEach((l) => {
+    const a = end(l.source)
+    const b = end(l.target)
+    ;(adj[a] ??= []).push(b)
+    ;(adj[b] ??= []).push(a)
   })
-  // Everyone else you know sits on a band, staggered so large networks still fit,
-  // sorted by company so colleagues land next to each other.
-  const levels = Math.max(1, Math.ceil(known.length / 36))
-  known.forEach((p, i) => {
-    const a = (i / Math.max(known.length, 1)) * TAU
-    const r = R_KNOWN + (i % levels) * BAND
-    placed[p.id] = { ...p, ...polar(r, a), angle: a, r, ring: 'known' }
-  })
-  const rVia = R_KNOWN + (levels - 1) * BAND + 85
-  // People you heard about sit just outside the person you heard it from.
-  const byAnchor: Record<string, number> = {}
-  via.forEach((p, i) => {
-    const tie = snap.ties.find((t) => (t.a === p.id && placed[t.b]?.ring !== 'via' && placed[t.b]) || (t.b === p.id && placed[t.a]))
-    const anchorId = tie ? (tie.a === p.id ? tie.b : tie.a) : undefined
-    const anchor = anchorId ? placed[anchorId] : undefined
-    const k = anchorId ? (byAnchor[anchorId] = (byAnchor[anchorId] ?? -1) + 1) : 0
-    const a = anchor ? anchor.angle + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.12 : (i / Math.max(via.length, 1)) * TAU + 0.1
-    placed[p.id] = { ...p, ...polar(rVia, a), angle: a, r: rVia, ring: 'via', via: anchorId }
-  })
-
-  // Company names for runs of three or more colleagues.
-  const groups: { name: string; angle: number }[] = []
-  let start = 0
-  for (let i = 1; i <= known.length; i++) {
-    if (i === known.length || known[i].company !== known[start].company) {
-      if (i - start >= 3 && known[start].company) {
-        groups.push({ name: known[start].company, angle: (((start + i - 1) / 2) / known.length) * TAU })
+  const parent: Record<string, string | null> = { me: null }
+  const queue = ['me']
+  while (queue.length) {
+    const n = queue.shift()!
+    for (const m of adj[n] ?? []) {
+      if (!(m in parent)) {
+        parent[m] = n
+        queue.push(m)
       }
-      start = i
     }
   }
-  return { placed, rVia, levels, groups }
+  return { parent, adj }
 }
 
-function labelProps(p: { x: number; y: number; angle: number }, offset: number) {
-  const deg = (p.angle * 180) / Math.PI - 90
-  const flip = Math.cos(p.angle - Math.PI / 2) < 0
-  const lx = p.x + Math.cos(p.angle - Math.PI / 2) * offset
-  const ly = p.y + Math.sin(p.angle - Math.PI / 2) * offset
-  return {
-    x: lx,
-    y: ly,
-    transform: `rotate(${flip ? deg + 180 : deg} ${lx} ${ly})`,
-    textAnchor: (flip ? 'end' : 'start') as 'end' | 'start',
-    dominantBaseline: 'middle' as const,
-  }
-}
+const DIST: Record<GLink['kind'], number> = { close: 70, direct: 115, tie: 55, friend: 150, hit: 60 }
 
 export function NetworkMap({
   goalId,
   onOpen,
   agents,
-  onAgents: _onAgents,
 }: {
   goalId: string
   onOpen: (id: string) => void
@@ -112,222 +140,298 @@ export function NetworkMap({
   onAgents?: (r: AgentRun) => void
 }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
-  // Friends' people appear only after "Ask your network" has run for this goal.
-  const agentState = 'idle' as 'idle' | 'running'
-  const friends: Friend[] = agents?.friends ?? []
-  const goal = goalId
   const [q, setQ] = useState('')
-  const [zoom, setZoom] = useState(1)
   const [hover, setHover] = useState<string | null>(null)
+  const [, setFrame] = useState(0)
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 })
+  const [size, setSize] = useState({ w: 600, h: 520 })
   const box = useRef<HTMLDivElement>(null)
+  const sim = useRef<Simulation<GNode, GLink> | null>(null)
+  const graph = useRef<{ nodes: GNode[]; links: GLink[]; from?: Snapshot }>({ nodes: [], links: [] })
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{ mode: 'pan' | 'node' | 'pinch' | null; node?: GNode; start?: { x: number; y: number }; moved?: boolean; dist?: number; view?: typeof view }>({ mode: null })
 
   useEffect(() => {
-    api<Snapshot>(`/api/graph?goal=${encodeURIComponent(goalId)}`).then((s) => {
-      // Only the people who fit this goal, plus anyone they are reached through.
-      const fit = new Set(s.relevant.filter((r) => r.goal_id === goalId).map((r) => r.id))
-      const keep = new Set(fit)
-      s.people.forEach((p) => {
-        if (fit.has(p.id) && !p.direct) {
-          s.ties.forEach((t) => {
-            if (t.a === p.id) keep.add(t.b)
-            if (t.b === p.id) keep.add(t.a)
-          })
-        }
-      })
-      setSnap({ ...s, people: s.people.filter((p) => keep.has(p.id)) })
-    })
+    api<Snapshot>(`/api/graph?goal=${encodeURIComponent(goalId)}`).then(setSnap)
   }, [goalId])
 
+  // The graph box only exists once the layout is built, so DOM listeners wait for it.
+  const built = !!snap && graph.current.from === snap
+
+  // Track the container size so the graph fills it.
   useEffect(() => {
     const el = box.current
-    if (el) {
-      el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
-      el.scrollTop = (el.scrollHeight - el.clientHeight) / 2
-    }
-  }, [zoom, snap])
+    if (!el) return
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }))
+    ro.observe(el)
+    setSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [built])
 
-  const lay = useMemo(() => (snap ? layout(snap) : null), [snap])
-  if (!snap || !lay) return <Spinner />
+  const fit = useCallback(
+    (nodes: GNode[] = graph.current.nodes) => {
+      if (!nodes.length) return
+      const xs = nodes.map((n) => n.x ?? 0)
+      const ys = nodes.map((n) => n.y ?? 0)
+      const minX = Math.min(...xs) - 40
+      const maxX = Math.max(...xs) + 40
+      const minY = Math.min(...ys) - 40
+      const maxY = Math.max(...ys) + 40
+      const k = Math.min(2, Math.max(0.3, Math.min(size.w / (maxX - minX), size.h / (maxY - minY))))
+      setView({ k, x: size.w / 2 - ((minX + maxX) / 2) * k, y: size.h / 2 - ((minY + maxY) / 2) * k })
+    },
+    [size.w, size.h],
+  )
 
-  const people = Object.values(lay.placed)
-  const hasVia = people.some((p) => p.ring === 'via')
-  const rFriends = (hasVia ? lay.rVia : R_KNOWN + (lay.levels - 1) * BAND) + 70
-  // Each friend sits on the outer ring; the people their agent found fan out behind them.
-  const friendAngle = (i: number) => (i / Math.max(friends.length, 1)) * TAU + Math.PI / 4
-  const hits: HitPlaced[] = []
-  const hitRows = Math.max(1, ...friends.map((f) => Math.ceil(((agents?.people ?? []).filter((h) => h.paths[0]?.[0]?.handle === f.handle || h.paths[0]?.[0]?.name === f.name).length) / 9)))
-  friends.forEach((f, i) => {
-    const mine = (agents?.people ?? []).filter((h) => h.paths[0]?.[0]?.handle === f.handle || (!h.paths[0]?.[0]?.handle && h.paths[0]?.[0]?.name === f.name))
-    const span = Math.min((TAU / Math.max(friends.length, 1)) * 0.85, Math.max(0.35, mine.length * 0.11))
-    mine.forEach((h, j) => {
-      const a = friendAngle(i) - span / 2 + (span * (j + 0.5)) / Math.max(mine.length, 1)
-      const r = rFriends + 85 + (j % hitRows) * 34
-      hits.push({ ...h, ...polar(r, a), angle: a })
+  // Build the graph and run the physics.
+  useEffect(() => {
+    if (!snap) return
+    const g = build(snap, agents, goalId)
+    // Keep positions of nodes that already exist, so new friends' people float in gently.
+    const old = new Map(graph.current.nodes.map((n) => [n.id, n]))
+    g.nodes.forEach((n) => {
+      const o = old.get(n.id)
+      if (o) {
+        n.x = o.x
+        n.y = o.y
+      }
     })
-  })
-  const rOuter = hits.length ? rFriends + 85 + (hitRows - 1) * 34 : rFriends
-  const R = (friends.length ? rOuter : hasVia ? lay.rVia : rFriends - 40) + 62
-  const score: Record<string, number> = {}
-  if (goal) snap.relevant.filter((r) => r.goal_id === goal).forEach((r) => (score[r.id] = r.score))
-  const term = q.trim().toLowerCase()
-  const lit = (p: Node) =>
-    (!term || `${p.name} ${p.headline} ${p.company}`.toLowerCase().includes(term))
-  const dimming = Boolean(term)
-  const showAllLabels = people.length <= 90
-  const litCount = people.filter(lit).length
-  const hoveredHit = hover ? hits.find((h) => `h:${h.key}` === hover) : undefined
-  const hovered = hover ? (lay.placed[hover] ?? (hoveredHit ? { ...hoveredHit, id: hover, ring: 'hit' as const } : null)) : null
+    graph.current = { ...g, from: snap }
+    setFrame((f) => f + 1)
+    sim.current?.stop()
+    const s = forceSimulation<GNode>(g.nodes)
+      .force('link', forceLink<GNode, GLink>(g.links).id((n) => n.id).distance((l) => DIST[l.kind]).strength(0.6))
+      .force('charge', forceManyBody<GNode>().strength((n) => (n.kind === 'me' ? -500 : n.kind === 'friend' ? -300 : -140)))
+      .force('collide', forceCollide<GNode>().radius((n) => n.r + 8))
+      .force('x', forceX<GNode>(0).strength(0.03))
+      .force('y', forceY<GNode>(0).strength(0.03))
+    if (!old.size) {
+      s.stop()
+      s.tick(160) // settle before the first paint, then keep it gently alive
+      fit(g.nodes)
+      s.alpha(0.05).restart()
+    } else {
+      s.alpha(0.5).alphaDecay(0.05) // new people float in and settle within a second or two
+    }
+    let raf = 0
+    s.on('tick', () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setFrame((f) => f + 1))
+    })
+    sim.current = s
+    return () => {
+      s.stop()
+      cancelAnimationFrame(raf)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap, agents, goalId])
 
-  if (!people.length && !friends.length) {
-    return (
-      <p className="muted">
-        {agentState === 'running' ? "Asking your friends' agents..." : 'No one fits this goal yet, so there is nothing to map.'}
-      </p>
-    )
+
+  // Frame everyone once the box has its real size (and again if it is resized).
+  useEffect(() => {
+    if (built) fit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [built, size.w, size.h])
+
+  const toGraph = (clientX: number, clientY: number) => {
+    const rect = box.current!.getBoundingClientRect()
+    return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k }
   }
+
+  const zoomAt = (mx: number, my: number, factor: number) => {
+    setView((v) => {
+      const k = Math.min(4, Math.max(0.25, v.k * factor))
+      return { k, x: mx - (mx - v.x) * (k / v.k), y: my - (my - v.y) * (k / v.k) }
+    })
+  }
+
+  // Wheel zoom has to be a non-passive listener so the page does not scroll.
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [built])
+
+  const onPointerDown = (e: React.PointerEvent, node?: GNode) => {
+    e.stopPropagation()
+    ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      gesture.current = { mode: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), view }
+      return
+    }
+    if (node) {
+      node.fx = node.x
+      node.fy = node.y
+      sim.current?.alphaTarget(0.25).restart()
+      gesture.current = { mode: 'node', node, start: { x: e.clientX, y: e.clientY }, moved: false }
+    } else {
+      gesture.current = { mode: 'pan', start: { x: e.clientX - view.x, y: e.clientY - view.y }, moved: false }
+    }
+  }
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const gs = gesture.current
+    if (gs.mode === 'pinch' && pointers.current.size === 2 && gs.dist && gs.view) {
+      const [a, b] = [...pointers.current.values()]
+      const rect = box.current!.getBoundingClientRect()
+      const mx = (a.x + b.x) / 2 - rect.left
+      const my = (a.y + b.y) / 2 - rect.top
+      const k = Math.min(4, Math.max(0.25, gs.view.k * (Math.hypot(a.x - b.x, a.y - b.y) / gs.dist)))
+      setView({ k, x: mx - (mx - gs.view.x) * (k / gs.view.k), y: my - (my - gs.view.y) * (k / gs.view.k) })
+    } else if (gs.mode === 'node' && gs.node && gs.start) {
+      if (Math.hypot(e.clientX - gs.start.x, e.clientY - gs.start.y) > 4) gs.moved = true
+      const p = toGraph(e.clientX, e.clientY)
+      gs.node.fx = p.x
+      gs.node.fy = p.y
+    } else if (gs.mode === 'pan' && gs.start) {
+      gs.moved = true
+      setView((v) => ({ ...v, x: e.clientX - gs.start!.x, y: e.clientY - gs.start!.y }))
+    }
+  }
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    const gs = gesture.current
+    if (gs.mode === 'node' && gs.node) {
+      const n = gs.node
+      if (n.kind !== 'me') {
+        n.fx = null
+        n.fy = null
+      }
+      sim.current?.alphaTarget(0)
+      if (!gs.moved) {
+        if (n.personId) onOpen(n.personId)
+        else if (n.url) window.open(n.url, '_blank', 'noopener')
+      }
+    }
+    if (pointers.current.size === 0) gesture.current = { mode: null }
+  }
+
+  if (!built) return <Spinner />
+  const { nodes, links } = graph.current
+  const { parent, adj } = parents(links)
+  if (nodes.length <= 1) return <p className="muted">No one fits this goal yet, so there is nothing to map.</p>
+
+  // What to light up: the hovered node, its neighbours, and its path back to you.
+  const lit = new Set<string>()
+  const litEdges = new Set<string>()
+  if (hover) {
+    lit.add(hover)
+    ;(adj[hover] ?? []).forEach((m) => {
+      lit.add(m)
+      litEdges.add([hover, m].sort().join('|'))
+    })
+    let n: string | null | undefined = hover
+    while (n && parent[n] !== undefined && parent[n] !== null) {
+      const p: string = parent[n]!
+      lit.add(p)
+      litEdges.add([n, p].sort().join('|'))
+      n = p
+    }
+  }
+  const term = q.trim().toLowerCase()
+  const match = (n: GNode) => !term || `${n.name} ${n.sub}`.toLowerCase().includes(term)
+  const focus = Boolean(hover || term)
+  const on = (n: GNode) => (hover ? lit.has(n.id) : match(n))
+  const hovered = hover ? nodes.find((n) => n.id === hover) : undefined
+  const showLabel = (n: GNode) => n.kind === 'me' || n.kind === 'friend' || lit.has(n.id) || (term && match(n)) || view.k >= 1.2 || nodes.length <= 30
 
   return (
     <div className="stack map-wrap">
       <div className="map-controls">
         <input className="input" type="search" placeholder="Highlight by name, role or company" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Highlight people" />
       </div>
-      {dimming && (
-        <p className="small muted">
-          {litCount} of {people.length} people match.
-        </p>
-      )}
 
-      <div className="map" ref={box}>
-        <svg viewBox={`${-R} ${-R} ${2 * R} ${2 * R}`} style={{ width: `${zoom * 100}%` }} role="img" aria-label={`Map of ${people.length} people around you`}>
-          {/* rings */}
-          <circle r={R_CLOSE} className="map-ring map-ring-close" />
-          <circle r={R_KNOWN + ((lay.levels - 1) * BAND) / 2} className="map-ring" style={{ strokeWidth: lay.levels * BAND }} />
-          {hasVia && <circle r={lay.rVia} className="map-ring map-ring-via" />}
-          {friends.length > 0 && <circle r={rFriends} className="map-ring map-ring-friends" />}
-
-          {lay.groups.map((g) => {
-            const p = polar(R_KNOWN - 34, g.angle)
-            return (
-              <text key={g.name} {...labelProps({ ...p, angle: g.angle }, 0)} className="map-group" textAnchor="middle">
-                {g.name}
-              </text>
-            )
-          })}
-
-          {/* edges */}
-          {people.map((p) =>
-            p.ring === 'via' && p.via && lay.placed[p.via] ? (
-              <line key={`e${p.id}`} x1={lay.placed[p.via].x} y1={lay.placed[p.via].y} x2={p.x} y2={p.y} className={`map-edge map-edge-via ${dimming && !lit(p) ? 'dim' : ''}`} />
-            ) : p.ring !== 'via' ? (
-              <line key={`e${p.id}`} x1={0} y1={0} x2={p.x} y2={p.y} className={`map-edge ${p.ring === 'close' ? 'map-edge-close' : ''} ${dimming && !lit(p) ? 'dim' : ''}`} />
-            ) : null,
-          )}
-          {friends.map((f, i) => {
-            const p = polar(rFriends, friendAngle(i))
-            return <line key={`fe${f.handle}`} x1={0} y1={0} x2={p.x} y2={p.y} className="map-edge map-edge-friend" />
-          })}
-          {hits.map((h) => {
-            const i = friends.findIndex((f) => f.handle === h.paths[0]?.[0]?.handle || f.name === h.paths[0]?.[0]?.name)
-            const p = polar(rFriends, friendAngle(Math.max(i, 0)))
-            return <line key={`he${h.key}`} x1={p.x} y1={p.y} x2={h.x} y2={h.y} className={`map-edge map-edge-friend-hit ${dimming && !lit(h as any) ? 'dim' : ''}`} />
-          })}
-
-          {/* people */}
-          {people.map((p) => {
-            const on = !dimming || lit(p)
-            const s = score[p.id]
-            const r = goal && s !== undefined ? 8 + (s / 100) * 11 : p.ring === 'close' ? 15 : p.ring === 'known' ? 10 : 8
-            return (
-              <g
-                key={p.id}
-                className={`map-node map-node-${p.ring} ${on ? '' : 'dim'} ${goal && s !== undefined ? 'hot' : ''}`}
-                onClick={() => onOpen(p.id)}
-                onMouseEnter={() => setHover(p.id)}
-                onMouseLeave={() => setHover(null)}
-                tabIndex={0}
-                role="button"
-                aria-label={`${p.name}${p.headline ? `, ${p.headline}` : ''}`}
-                onKeyDown={(e) => e.key === 'Enter' && onOpen(p.id)}
-              >
-                <circle cx={p.x} cy={p.y} r={r} />
-                {p.notes > 0 && <circle cx={p.x + r * 0.75} cy={p.y - r * 0.75} r={3.2} className="map-note-dot" />}
-                {(showAllLabels || p.ring === 'close' || (dimming && on)) && (
-                  <text {...labelProps(p, r + 5)} className="map-label">
-                    {p.name.split(' ')[0]}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-
-          {hits.map((h) => {
-            const on = !dimming || lit(h as any)
-            const r = 7 + (h.score / 100) * 9
-            const open = () => h.url && window.open(h.url, '_blank', 'noopener')
-            return (
-              <g
-                key={h.key}
-                className={`map-node map-node-hit ${on ? '' : 'dim'}`}
-                onClick={open}
-                onMouseEnter={() => setHover(`h:${h.key}`)}
-                onMouseLeave={() => setHover(null)}
-                tabIndex={0}
-                role="button"
-                aria-label={`${h.name}, ${[h.position, h.company].filter(Boolean).join(' at ')}, through ${h.paths[0]?.[0]?.name}`}
-                onKeyDown={(e) => e.key === 'Enter' && open()}
-              >
-                <circle cx={h.x} cy={h.y} r={r} />
-                {(hits.length <= 40 || (dimming && on)) && (
-                  <text {...labelProps(h, r + 5)} className="map-label">
-                    {h.name.split(' ')[0]}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-
-          {friends.map((f, i) => {
-            const p = polar(rFriends, friendAngle(i))
-            return (
-              <g key={f.handle} className="map-friend">
-                <rect x={p.x - 18} y={p.y - 18} width={36} height={36} rx={10} />
-                <text x={p.x} y={p.y + 1} textAnchor="middle" dominantBaseline="middle" className="map-friend-initial">
-                  {f.name[0]}
-                </text>
-                <text x={p.x} y={p.y + 36} textAnchor="middle" className="map-label">
-                  {f.name.split(' ')[0]}
-                </text>
-              </g>
-            )
-          })}
-
-          {/* you */}
-          <circle r={28} className="map-me" />
-          <text textAnchor="middle" dominantBaseline="middle" className="map-me-label">
-            You
-          </text>
-
-          {hovered && (
-            <g className="map-tip" pointerEvents="none">
-              <rect x={hovered.x + 12} y={hovered.y - 34} width={Math.max(hovered.name.length, ((hovered.headline || '') + (hoveredHit ? ` via ${hoveredHit.paths[0]?.[0]?.name}` : '')).slice(0, 40).length) * 8.4 + 24} height={50} rx={8} />
-              <text x={hovered.x + 22} y={hovered.y - 17} className="map-tip-name">
-                {hovered.name}
-              </text>
-              <text x={hovered.x + 22} y={hovered.y + 4} className="map-tip-sub">
-                {(hoveredHit
-                  ? `Through ${hoveredHit.paths[0]?.[0]?.name}: ${[hoveredHit.position, hoveredHit.company].filter(Boolean).join(' at ')}`
-                  : hovered.headline || (hovered.ring === 'via' ? `Through ${lay.placed[(hovered as Placed).via ?? '']?.name ?? 'someone'}` : '')
-                ).slice(0, 40)}
-              </text>
-            </g>
-          )}
+      <div
+        className="fg"
+        ref={box}
+        onPointerDown={(e) => onPointerDown(e)}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <svg width={size.w} height={size.h} role="img" aria-label={`Graph of ${nodes.length - 1} people around you`}>
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            {links.map((l) => {
+              const a = l.source as GNode
+              const b = l.target as GNode
+              const key = [a.id, b.id].sort().join('|')
+              const hot = litEdges.has(key)
+              const dim = focus && !hot && !(term && match(a) && match(b))
+              return <line key={key} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`fg-edge fg-edge-${l.kind} ${hot ? 'hot' : ''} ${dim ? 'dim' : ''}`} />
+            })}
+            {nodes.map((n) => {
+              const dim = focus && !on(n)
+              return (
+                <g
+                  key={n.id}
+                  className={`fg-node fg-${n.kind} ${n.fit ? 'fit' : ''} ${dim ? 'dim' : ''} ${hover === n.id ? 'hover' : ''}`}
+                  transform={`translate(${n.x ?? 0},${n.y ?? 0})`}
+                  onPointerDown={(e) => onPointerDown(e, n)}
+                  onPointerEnter={() => setHover(n.id)}
+                  onPointerLeave={() => setHover((h) => (h === n.id ? null : h))}
+                  tabIndex={n.kind === 'me' ? -1 : 0}
+                  role={n.kind === 'me' ? undefined : 'button'}
+                  aria-label={n.kind === 'me' ? undefined : `${n.name}${n.sub ? `, ${n.sub}` : ''}`}
+                  onFocus={() => setHover(n.id)}
+                  onBlur={() => setHover(null)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    if (n.personId) onOpen(n.personId)
+                    else if (n.url) window.open(n.url, '_blank', 'noopener')
+                  }}
+                >
+                  <circle r={n.r} />
+                  {n.kind === 'me' && (
+                    <text className="fg-me-label" textAnchor="middle" dominantBaseline="central">
+                      You
+                    </text>
+                  )}
+                  {n.kind === 'friend' && (
+                    <text className="fg-friend-initial" textAnchor="middle" dominantBaseline="central">
+                      {n.name[0]}
+                    </text>
+                  )}
+                  {n.notes ? <circle className="fg-note" r={2.6} cx={n.r * 0.75} cy={-n.r * 0.75} /> : null}
+                  {n.kind !== 'me' && showLabel(n) && (
+                    <text className="fg-label" y={n.r + 12} textAnchor="middle">
+                      {n.kind === 'friend' ? n.name.split(' ')[0] : n.name.split(' ')[0]}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </g>
         </svg>
-        <div className="map-zoom">
-          <button className="btn btn-quiet btn-small" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">
+
+        {hovered && hovered.kind !== 'me' && (
+          <div className="fg-tip" style={{ left: Math.min(size.w - 240, Math.max(8, (hovered.x ?? 0) * view.k + view.x + 14)), top: Math.max(8, (hovered.y ?? 0) * view.k + view.y - 52) }}>
+            <strong>{hovered.name}</strong>
+            {hovered.sub && <span>{hovered.sub}</span>}
+            <em>{hovered.personId ? 'Click to open their card' : hovered.url ? 'Click for LinkedIn' : ''}</em>
+          </div>
+        )}
+
+        <div className="fg-tools" onPointerDown={(e) => e.stopPropagation()}>
+          <button className="btn btn-quiet btn-small" onClick={() => zoomAt(size.w / 2, size.h / 2, 1 / 1.3)} aria-label="Zoom out">
             −
           </button>
-          <button className="btn btn-quiet btn-small" onClick={() => setZoom((z) => Math.min(3, z + 0.5))} disabled={zoom >= 3} aria-label="Zoom in">
+          <button className="btn btn-quiet btn-small" onClick={() => zoomAt(size.w / 2, size.h / 2, 1.3)} aria-label="Zoom in">
             +
+          </button>
+          <button className="btn btn-quiet btn-small" onClick={() => fit()}>
+            Fit
           </button>
         </div>
       </div>
@@ -340,29 +444,22 @@ export function NetworkMap({
           <i className="key key-close" /> Inner circle
         </span>
         <span>
-          <i className="key key-known" /> You know them
-        </span>
-        <span>
           <i className="key key-via" /> Heard of through someone
         </span>
-        {friends.length > 0 && (
+        {(agents?.friends?.length ?? 0) > 0 && (
           <span>
             <i className="key key-friend" /> Friend
           </span>
         )}
-        {hits.length > 0 && (
+        {(agents?.people?.length ?? 0) > 0 && (
           <span>
-            <i className="key key-hit" /> Fits, through a friend (tap for LinkedIn)
+            <i className="key key-hit" /> Fits, through a friend
           </span>
         )}
-        <span>
-          <i className="key key-note" /> Has your notes
-        </span>
       </div>
-      {agentState === 'running' && <p className="small muted">Asking your friends' agents...</p>}
       <p className="tiny faint">
-        You are in the middle. Green dots fit this goal, bigger means a better fit. After you tap Ask your network, your friends and the people their agents found appear outside the ring. Tap
-        anyone of yours to open their card.
+        Hover anyone to light up their path to you. Drag people around, scroll or pinch to zoom, drag the background to move. After you tap Ask your network,
+        your friends and the people their agents found join the graph.
       </p>
     </div>
   )

@@ -1832,3 +1832,196 @@ mark {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* Force graph (goal map) -------------------------------------------------- */
+
+.fg {
+  position: relative;
+  height: min(70vh, 560px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.fg:active {
+  cursor: grabbing;
+}
+
+.fg svg {
+  display: block;
+}
+
+.fg-edge {
+  stroke: var(--line);
+  stroke-width: 1.2;
+  transition: opacity 0.15s, stroke 0.15s;
+}
+
+.fg-edge-close {
+  stroke: var(--close);
+  stroke-width: 1.8;
+  opacity: 0.8;
+}
+
+.fg-edge-tie {
+  stroke: var(--ink-3);
+  stroke-dasharray: 3 4;
+}
+
+.fg-edge-friend {
+  stroke: var(--focus);
+  stroke-dasharray: 2 5;
+  stroke-width: 1.5;
+}
+
+.fg-edge-hit {
+  stroke: var(--keep);
+  stroke-dasharray: 3 4;
+  opacity: 0.6;
+}
+
+.fg-edge.hot {
+  stroke: var(--keep);
+  stroke-width: 2.6;
+  stroke-dasharray: none;
+  opacity: 1;
+}
+
+.fg-edge.dim {
+  opacity: 0.08;
+}
+
+.fg-node {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.fg-node circle:first-child {
+  fill: var(--surface);
+  stroke: var(--ink-2);
+  stroke-width: 1.8;
+  transition: stroke-width 0.15s;
+}
+
+.fg-node.fit circle:first-child {
+  fill: var(--keep);
+  stroke: var(--keep);
+}
+
+.fg-close circle:first-child {
+  stroke: var(--close);
+  stroke-width: 2.6;
+}
+
+.fg-close.fit circle:first-child {
+  stroke: var(--close);
+}
+
+.fg-via circle:first-child {
+  stroke-dasharray: 3 2;
+}
+
+.fg-hit circle:first-child,
+.fg-hit.fit circle:first-child {
+  fill: var(--keep-soft);
+  stroke: var(--keep);
+  stroke-dasharray: 3 2;
+}
+
+.fg-friend circle:first-child {
+  fill: var(--surface);
+  stroke: var(--focus);
+  stroke-width: 2.5;
+}
+
+.fg-me circle:first-child {
+  fill: var(--ink);
+  stroke: var(--ink);
+}
+
+.fg-node.hover circle:first-child {
+  stroke: var(--focus);
+  stroke-width: 3.5;
+}
+
+.fg-node.dim {
+  opacity: 0.15;
+}
+
+.fg-node:focus {
+  outline: none;
+}
+
+.fg-label {
+  font-size: 11px;
+  fill: var(--ink-2);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+}
+
+.fg-node.hover .fg-label,
+.fg-friend .fg-label {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+.fg-me-label {
+  fill: var(--on-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.fg-friend-initial {
+  fill: var(--focus);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.fg-note {
+  fill: var(--focus);
+  stroke: var(--surface);
+  stroke-width: 1.2;
+}
+
+.fg-tip {
+  position: absolute;
+  max-width: 240px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 0.8125rem;
+  pointer-events: none;
+  box-shadow: var(--shadow-card);
+}
+
+.fg-tip em {
+  font-style: normal;
+  opacity: 0.7;
+  font-size: 0.75rem;
+}
+
+.fg-tools {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 4px;
+}
+
+.fg-tools .btn {
+  min-width: 36px;
+  background: var(--surface);
+}
