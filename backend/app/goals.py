@@ -320,8 +320,35 @@ def attach_web_facts(plan: GoalPlan, people: list[dict]) -> bool:
         facts = found.get((p.get("company") or "").strip(), [])
         if facts:
             any_found = True
-        p["facts"] = [f for f in p.get("facts", []) if f.get("kind") != "web"] + [{**f, "kind": "web"} for f in facts]
+        p["facts"] = [f for f in p.get("facts", []) if f.get("kind") != "web"] + [
+            {**f, "kind": "web", "text": f"[source: {urlparse(f['url']).netloc.removeprefix('www.')}] {f['text'][:260]}"} for f in facts
+        ]
     return any_found
+
+
+def role_need(plan: GoalPlan, person: dict, label: str) -> str | None:
+    """The need this person's own title fits: the model's pick if the title backs it, else another need the title
+    backs, else None (a software manager is not a 'recruiter', whatever a web page says about their company)."""
+    from .search import ROLE_ALIASES
+
+    # What the person does: their title, plus what you or they wrote (notes, status). Never a web page.
+    own = {
+        "headline": person.get("headline"),
+        "position": person.get("position"),
+        "company": person.get("company"),
+        "facts": [f for f in person.get("facts", []) or [] if f.get("kind") != "web"],
+    }
+    title = " ".join(filter(None, [person.get("headline"), person.get("position")]))
+    by_label = {n.label.lower(): n for n in plan.needs}
+    first = by_label.get((label or "").lower())
+    for need in ([first] if first else []) + [n for n in plan.needs if n is not first]:
+        if covers(need, own, ""):
+            return need.label
+        head = head_phrase(need.label)
+        aliases = [a for group in ROLE_ALIASES if head in group for a in group]
+        if any(_has_phrase(title, a) for a in aliases):
+            return need.label
+    return None
 
 
 def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False):
@@ -359,7 +386,9 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
         score = max(0, min(100, int(s.score)))
         if not evidence or score < settings.relevance_floor:
             continue
-        need = match_need(s.need, plan)
+        need = role_need(plan, person, match_need(s.need, plan))
+        if need is None:
+            continue
         web_cited = [{k: f[k] for k in ("id", "text", "url")} for f in person["facts"] if f.get("kind") == "web" and f["id"] in evidence]
         backed = any(e != "profile" for e in evidence)  # a web source, their status, or your note
         if (plan.company_question or "").strip() and not backed:

@@ -157,3 +157,41 @@ def test_remote_goal_needs_evidence_and_same_goal_is_not_duplicated(client):
         assert len([g for g in client.get("/api/goals", headers=h).json()["goals"] if g["goal"]["status"] == "open"]) == 1
     finally:
         llm.set_model(None)
+
+
+def test_failed_model_calls_give_no_keyword_guesses():
+    from app.llm import HostedModel
+
+    class Down(HostedModel):
+        name = "down"
+        provider = "test"
+        calls = 0
+
+        def __init__(self):
+            self.fallback = HeuristicModel()
+
+        def _parse(self, instructions, payload, schema):
+            Down.calls += 1
+            raise TimeoutError("model timed out")
+
+    people = [{"id": "a", "name": "Mohammad Parvez", "headline": "Site Reliability Engineer at London Stock Exchange", "tie": "friend", "strength": None, "facts": []}]
+    assert Down().score_people("UK internship", PLAN, people).scores == []
+    assert Down.calls == 2  # one retry, then nothing
+
+
+def test_role_must_match_the_need():
+    from app.goals import role_need
+
+    plan = GoalPlan(
+        summary="UK internship",
+        needs=[
+            Need(label="UK internship recruiter", description="x", keywords=["recruiter", "talent acquisition", "campus", "early careers"]),
+            Need(label="UK internship hiring manager", description="x", keywords=["engineering manager", "hiring manager", "team lead"]),
+        ],
+    )
+    web_says_hiring = [{"id": "web:1", "kind": "web", "text": "Atlassian internship program is hiring"}]
+    eng_mgr = {"headline": "Senior Software Engineering Manager at Atlassian", "facts": web_says_hiring}
+    # Not a recruiter, whatever the web says about the company; but a fair hiring manager.
+    assert role_need(plan, eng_mgr, "UK internship recruiter") == "UK internship hiring manager"
+    assert role_need(plan, {"headline": "Recruiter at Siemens Energy"}, "UK internship recruiter") == "UK internship recruiter"
+    assert role_need(plan, {"headline": "Site Reliability Engineer at London Stock Exchange"}, "UK internship recruiter") is None

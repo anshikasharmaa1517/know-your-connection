@@ -450,7 +450,10 @@ function GapAsk({
   const sortedPeople = result
     ? [...result.people].sort((a, b) => Number(!(a.for_gap || gapSet.has((a.need || '').toLowerCase()))) - Number(!(b.for_gap || gapSet.has((b.need || '').toLowerCase()))))
     : []
-  const agentPage = usePage(sortedPeople)
+  const [showWeakFriends, setShowWeakFriends] = useState(false)
+  const strongPeople = sortedPeople.filter((p) => p.score >= STRONG)
+  const weakFriends = sortedPeople.length - strongPeople.length
+  const agentPage = usePage(showWeakFriends || strongPeople.length === 0 ? sortedPeople : strongPeople)
   const first = useRef(signal)
   useEffect(() => {
     if (signal === first.current) return
@@ -545,6 +548,13 @@ function GapAsk({
       </p>
       {agentPage.items.map((h) => row(h, true))}
       <Pager {...agentPage} />
+      {strongPeople.length > 0 && weakFriends > 0 && (
+        <div className="row" style={{ justifyContent: 'center' }}>
+          <button className="btn btn-ghost btn-small" onClick={() => setShowWeakFriends(!showWeakFriends)}>
+            {showWeakFriends ? 'Hide weaker matches' : `Show ${weakFriends} weaker ${weakFriends === 1 ? 'match' : 'matches'}`}
+          </button>
+        </div>
+      )}
       <div className="row row-wrap">
         {result.scanned.fof > 0 ? null : result.plan === 'pro' ? (
           result.third.networks > 0 && (

@@ -555,7 +555,11 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
         s = scores.get(r["key"])
         if not s or s.score < floor:
             continue
-        need = match_need(s.need, plan)
+        from .goals import role_need
+
+        need = role_need(plan, {"headline": r["headline"], "position": r["position"], "company": r["company"]}, match_need(s.need, plan))
+        if need is None:
+            continue
         cited = [{"text": f["text"], "url": f["url"]} for f in r.get("facts", []) if f.get("kind") == "web" and f["id"] in s.evidence]
         score = max(0, min(100, int(s.score)))
         backed = any(f["id"] in s.evidence for f in r.get("facts", []))

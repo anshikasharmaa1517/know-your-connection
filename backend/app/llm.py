@@ -154,6 +154,13 @@ Rules:
   anything about the company: cite their ids, and say what the source says ("their careers page lists remote roles").
   Do not use your own memory about a company when web facts are given for it.
 - If no web facts are given for a company, do not claim anything about it.
+- Pick the need from the person's own title. A "recruiter" need requires a recruiting, talent or HR title; a "hiring
+  manager" need requires a manager title in the relevant team. If no need matches what the person actually does,
+  leave them out.
+- Web facts start with [source: site]. Say where a claim comes from ("an Atlassian careers page says...",
+  "a UK visa-sponsor list shows..."). Never call web results "notes": notes are only facts of kind fact or intent.
+  Company sites, careers pages and job boards are good sources; resume-advice sites and blogs are weak, so score
+  lower when they are the only source.
 - Copy each person's id and name exactly as given. The reason must be about that person's own title and company.
 - No speculation. Do not write "likely", "probably", "may", "presumably" or "could be". If something is not in the
   data, it is unknown.
@@ -557,7 +564,7 @@ class HostedModel:
             return self.fallback.expand_role(query)
 
     def score_people(self, goal: str, plan: GoalPlan, people: list[dict]) -> Scores:
-        chunks = [people[i : i + 20] for i in range(0, len(people), 20)]
+        chunks = [people[i : i + 12] for i in range(0, len(people), 12)]  # smaller batches fail less
 
         def score(chunk: list[dict]) -> list[Score]:
             # Short ids (p1, p2...) plus the name echoed back: long random ids get mixed up, and a reason
@@ -567,11 +574,15 @@ class HostedModel:
                 {"goal": goal, "needs": [n.model_dump() for n in plan.needs], "people": [{**p, "id": k} for k, p in short.items()]},
                 ensure_ascii=False,
             )
-            try:
-                raw = self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores
-            except Exception as exc:
-                log.warning("score_people chunk fell back to heuristics: %s: %s", type(exc).__name__, exc)
-                return self.fallback.score_people(goal, plan, chunk).scores
+            raw = None
+            for attempt in (1, 2):  # one retry, then nothing: keyword guesses are worse than no answer
+                try:
+                    raw = self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores
+                    break
+                except Exception as exc:
+                    log.warning("score_people chunk failed (attempt %d): %s: %s", attempt, type(exc).__name__, exc)
+            if raw is None:
+                return []
             out: list[Score] = []
             for sc in raw:
                 person = short.get(sc.person_id.strip()) or next((p for p in chunk if p["id"] == sc.person_id), None)
