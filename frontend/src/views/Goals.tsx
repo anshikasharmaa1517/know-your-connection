@@ -43,6 +43,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
   const [agents, setAgents] = useState<Record<string, AgentRun>>({})
   const saveAgents = useCallback((gid: string, r: AgentRun) => setAgents((a) => ({ ...a, [gid]: r })), [])
   const toast = useToast()
+  const pastCount = goals?.filter((g) => g.goal.status === 'closed').length ?? 0
 
   const loadList = useCallback(async () => {
     const r = await api<{ goals: GoalRow[] }>('/api/goals')
@@ -139,6 +140,11 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
         <button className={`btn ${goals && goals.length > 0 ? 'btn-quiet' : 'btn-primary'}`} disabled={busy || !text.trim()}>
           {busy && text ? <Spinner label="Ranking" /> : goals && goals.length > 0 ? 'Add' : 'Rank my network'}
         </button>
+        {pastCount > 0 && (
+          <button type="button" className="btn btn-ghost past-toggle" aria-expanded={showPast} onClick={() => setShowPast(!showPast)}>
+            {showPast ? 'Hide past goals' : `Past goals (${pastCount})`}
+          </button>
+        )}
       </form>
 
       {goals && goals.length > 0 && (() => {
@@ -146,23 +152,15 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
         const past = goals.filter((g) => g.goal.status === 'closed')
         return (
           <>
-            <div className="goal-bar">
-              {current.length > 1 && (
-                <div className="goal-pills" role="group" aria-label="Your goals">
-                  {current.map((g) => (
-                    <button key={g.goal.id} className="goal-pill" aria-pressed={selected === g.goal.id} onClick={() => setSelected(g.goal.id)}>
-                      {g.goal.text}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {current.length <= 1 && <span className="grow" />}
-              {past.length > 0 && (
-                <button className="btn btn-ghost btn-small past-toggle" aria-expanded={showPast} onClick={() => setShowPast(!showPast)}>
-                  {showPast ? 'Hide past goals' : `Past goals (${past.length})`}
-                </button>
-              )}
-            </div>
+            {current.length > 1 && (
+              <div className="goal-pills" role="group" aria-label="Your goals">
+                {current.map((g) => (
+                  <button key={g.goal.id} className="goal-pill" aria-pressed={selected === g.goal.id} onClick={() => setSelected(g.goal.id)}>
+                    {g.goal.text}
+                  </button>
+                ))}
+              </div>
+            )}
             {showPast && past.length > 0 && (
               <div className="panel past-goals">
                 {past.map((g) => (
