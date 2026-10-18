@@ -80,7 +80,7 @@ class Need(BaseModel):
 
 class GoalPlan(BaseModel):
     summary: str = Field(description="The goal restated in one short sentence.")
-    needs: list[Need] = Field(description="1 to 4 distinct kinds of people who would move this goal forward.")
+    needs: list[Need] = Field(description="1 to 3 distinct kinds of people who can directly open the door for this goal.")
 
 
 class Score(BaseModel):
@@ -123,7 +123,12 @@ Rules:
 """
 
 PLAN_INSTRUCTIONS = """You help someone work out which kinds of people in their own network could move a goal forward.
-Return 1 to 4 distinct needs. Each need is a kind of person (role, sector, seniority), not a named person.
+Return 1 to 3 distinct needs. Each need is a kind of person (role, sector, seniority), not a named person.
+Only include people who can directly open the door: someone who can hire, refer, invest, buy, decide, or is already doing
+exactly what the goal describes and can vouch for them. For a job goal that means recruiters, hiring managers and people
+working in that kind of role or company.
+Do not add supporting or advisory roles (career coaches, consultants, resume writers, mentors, trainers) unless the goal
+itself asks for advice, coaching or mentorship. Fewer, sharper needs are better than padding.
 Keywords should be words that would literally appear in a LinkedIn job title, company name or a note about such a person."""
 
 SCORE_INSTRUCTIONS = """You rank people from the user's own network against one goal.
@@ -502,6 +507,7 @@ class HostedModel:
                 need.keywords = [k.lower().strip() for k in need.keywords if k.strip()]
             if not plan.needs:
                 raise RuntimeError("model returned no needs")
+            plan.needs = plan.needs[:3]
             return plan
         except Exception as exc:
             log.warning("plan_goal fell back to heuristics: %s: %s", type(exc).__name__, exc)

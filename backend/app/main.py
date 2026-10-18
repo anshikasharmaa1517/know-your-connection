@@ -376,8 +376,13 @@ def update_goal(gid: str, body: GoalIn, v: Viewer = Depends(viewer)):
 
 @app.post("/api/goals/{gid}/rerank")
 def rerank(gid: str, v: Viewer = Depends(viewer)):
-    goals_mod.rank(graph_of(v), gid)
-    return goals_mod.get_goal(graph_of(v), gid)
+    # Re-plan as well as re-rank, so a goal picks up better "kinds of people who'd help".
+    g = graph_of(v)
+    goal = goals_mod._goal(g, gid)
+    if goal.get("status") == "open":
+        return goals_mod.update_goal(g, gid, goal["text"])
+    goals_mod.rank(g, gid)
+    return goals_mod.get_goal(g, gid)
 
 
 @app.post("/api/goals/{gid}/close")
