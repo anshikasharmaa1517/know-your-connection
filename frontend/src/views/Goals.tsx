@@ -434,7 +434,7 @@ function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string
   const found = result.friends.filter((f) => (byFriend[f.handle] ?? 0) > 0)
   const summary =
     result.people.length === 0
-      ? `Asked ${result.friends.length === 1 ? `${label(result.friends[0])}'s agent` : `${result.friends.length} friends' agents (${result.friends.map(label).join(', ')})`}. Nobody in their networks fits this yet.`
+      ? "Nobody in your friends' networks fits this yet."
       : found.map((f) => `${label(f)}'s agent found ${byFriend[f.handle]}`).join(', ') +
         (found.length < result.friends.length ? `. ${result.friends.length - found.length === 1 ? 'The other found' : 'Others found'} none.` : '.')
 
