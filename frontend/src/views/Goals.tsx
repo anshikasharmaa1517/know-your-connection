@@ -545,22 +545,12 @@ function GapAsk({
         <button className="btn btn-ghost btn-small" onClick={() => run(result.scanned.fof > 0 ? 3 : 2)}>
           Ask again
         </button>
-        {result.at && <span className="tiny faint">Asked {formatWhen(result.at)}</span>}
-        <button className="btn btn-ghost btn-small" onClick={() => setHidden(true)}>
-          Hide
-        </button>
+
       </div>
     </div>
   )
 }
 
-
-function formatWhen(ms: number): string {
-  const d = new Date(ms)
-  const sameDay = d.toDateString() === new Date().toDateString()
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  return sameDay ? `today at ${time}` : `${formatDate(ms)} at ${time}`
-}
 
 
 const VAGUE = new Set(['remote', 'work', 'job', 'jobs', 'role', 'roles', 'startup', 'company', 'team', 'senior', 'lead', 'manager', 'leader', 'hiring', 'people'])
