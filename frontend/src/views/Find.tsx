@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, copy } from '../api'
 import { Avatar } from '../components/Ring'
 import { Highlight, Spinner, useToast } from '../components/ui'
+import { PersonSheet } from '../components/PersonSheet'
 import type { Tab } from '../App'
 
 type Hop = { name: string; kind: 'friend' | 'contact' }
@@ -269,6 +270,7 @@ function Degree({
 
 function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: string }) {
   const [all, setAll] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
   const toast = useToast()
   const shown = all ? hits : hits.slice(0, SHOW)
   return (
@@ -280,7 +282,13 @@ function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: 
           <div key={h.key} className="person-row hit">
             <Avatar name={h.name} tie={tie} size={40} />
             <span className="grow">
-              <span className="person-name">{h.name}</span>
+              {h.person_id ? (
+                <button className="link-button person-name hit-name" onClick={() => setOpen(h.person_id)}>
+                  {h.name}
+                </button>
+              ) : (
+                <span className="person-name">{h.name}</span>
+              )}
               <span className="small muted ellipsis" style={{ display: 'block' }}>
                 <Highlight text={[h.position, h.company].filter(Boolean).join(' at ')} words={h.matched} />
               </span>
@@ -314,6 +322,7 @@ function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: 
           </div>
         )
       })}
+      {open && <PersonSheet id={open} onClose={() => setOpen(null)} />}
       {hits.length > SHOW && (
         <button className="btn btn-ghost btn-small" onClick={() => setAll(!all)}>
           {all ? 'Show fewer' : `Show all ${hits.length}`}

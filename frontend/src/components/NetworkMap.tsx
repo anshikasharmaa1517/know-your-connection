@@ -14,7 +14,6 @@ type Node = {
 }
 type Snapshot = { people: Node[]; ties: { a: string; b: string; relation: string | null }[]; relevant: { id: string; goal_id: string; score: number }[] }
 type Friend = { id: string; name: string }
-type GoalRow = { goal: { id: string; text: string; status: string } }
 
 type Placed = Node & { x: number; y: number; angle: number; r: number; ring: 'close' | 'known' | 'via'; via?: string }
 
@@ -87,24 +86,31 @@ function labelProps(p: { x: number; y: number; angle: number }, offset: number) 
   }
 }
 
-export function NetworkMap({ me, onOpen }: { me: string; onOpen: (id: string) => void }) {
+export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: string) => void }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
-  const [friends, setFriends] = useState<Friend[]>([])
-  const [goals, setGoals] = useState<GoalRow[]>([])
-  const [goal, setGoal] = useState<string>('')
+  const friends: Friend[] = []
+  const goal = goalId
   const [q, setQ] = useState('')
   const [zoom, setZoom] = useState(1)
   const [hover, setHover] = useState<string | null>(null)
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    Promise.all([api<Snapshot>('/api/graph'), api('/api/friends'), api<{ goals: GoalRow[] }>('/api/goals')]).then(([s, f, g]) => {
-      setSnap(s)
-      setFriends(f.friends)
-      const open = g.goals.filter((x) => x.goal.status === 'open')
-      setGoals(open)
+    api<Snapshot>('/api/graph').then((s) => {
+      // Only the people who fit this goal, plus anyone they are reached through.
+      const fit = new Set(s.relevant.filter((r) => r.goal_id === goalId).map((r) => r.id))
+      const keep = new Set(fit)
+      s.people.forEach((p) => {
+        if (fit.has(p.id) && !p.direct) {
+          s.ties.forEach((t) => {
+            if (t.a === p.id) keep.add(t.b)
+            if (t.b === p.id) keep.add(t.a)
+          })
+        }
+      })
+      setSnap({ ...s, people: s.people.filter((p) => keep.has(p.id)) })
     })
-  }, [])
+  }, [goalId])
 
   useEffect(() => {
     const el = box.current
@@ -125,35 +131,24 @@ export function NetworkMap({ me, onOpen }: { me: string; onOpen: (id: string) =>
   if (goal) snap.relevant.filter((r) => r.goal_id === goal).forEach((r) => (score[r.id] = r.score))
   const term = q.trim().toLowerCase()
   const lit = (p: Node) =>
-    (!goal || score[p.id] !== undefined) && (!term || `${p.name} ${p.headline} ${p.company}`.toLowerCase().includes(term))
-  const dimming = Boolean(goal || term)
+    (!term || `${p.name} ${p.headline} ${p.company}`.toLowerCase().includes(term))
+  const dimming = Boolean(term)
   const showAllLabels = people.length <= 90
   const litCount = people.filter(lit).length
   const hovered = hover ? lay.placed[hover] : null
 
-  if (!people.length && !friends.length) {
-    return <p className="muted">Keep a few people from your LinkedIn import and they will show up here around you.</p>
+  if (!people.length) {
+    return <p className="muted">No one fits this goal yet, so there is nothing to map.</p>
   }
 
   return (
     <div className="stack map-wrap">
       <div className="map-controls">
         <input className="input" type="search" placeholder="Highlight by name, role or company" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Highlight people" />
-        {goals.length > 0 && (
-          <select className="input" value={goal} onChange={(e) => setGoal(e.target.value)} aria-label="Highlight a goal">
-            <option value="">No goal highlighted</option>
-            {goals.map((g) => (
-              <option key={g.goal.id} value={g.goal.id}>
-                Goal: {g.goal.text}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
       {dimming && (
         <p className="small muted">
-          {litCount} of {people.length} people {goal ? 'matter for this goal' : 'match'}
-          {goal ? '. Bigger means a better fit.' : '.'}
+          {litCount} of {people.length} people match.
         </p>
       )}
 
@@ -262,6 +257,9 @@ export function NetworkMap({ me, onOpen }: { me: string; onOpen: (id: string) =>
 
       <div className="legend map-legend">
         <span>
+          <i className="key key-fit" /> Fits this goal
+        </span>
+        <span>
           <i className="key key-close" /> Inner circle
         </span>
         <span>
@@ -279,7 +277,7 @@ export function NetworkMap({ me, onOpen }: { me: string; onOpen: (id: string) =>
           <i className="key key-note" /> Has your notes
         </span>
       </div>
-      <p className="tiny faint">Tap anyone to open their card. Colleagues sit next to each other. {me.split(' ')[0]}, you are in the middle.</p>
+      <p className="tiny faint">You are in the middle. Green dots fit this goal, bigger means a better fit. Grey dots are who you'd go through. Tap anyone to open their card and add a note.</p>
     </div>
   )
 }

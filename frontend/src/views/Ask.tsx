@@ -6,7 +6,7 @@ import type { AskDraft, Tab } from '../App'
 
 type Friend = { id: string; name: string; handle: string }
 
-export function AskView({ draft, clearDraft, me, go, onInbox }: {
+export function AskView({ draft, clearDraft, me, go: _go, onInbox }: {
   draft: AskDraft | null
   clearDraft: () => void
   me: Friend
@@ -177,7 +177,7 @@ export function AskView({ draft, clearDraft, me, go, onInbox }: {
                 </p>
               )}
               {r.replies.map((rep: any) => (
-                <OutboxReply key={rep.reply.id} rep={rep} busy={busy} run={run} go={go} />
+                <OutboxReply key={rep.reply.id} rep={rep} busy={busy} run={run} />
               ))}
             </div>
           ))}
@@ -209,7 +209,7 @@ export function AskView({ draft, clearDraft, me, go, onInbox }: {
   )
 }
 
-function OutboxReply({ rep, busy, run, go }: { rep: any; busy: boolean; run: (fn: () => Promise<any>, ok?: string) => Promise<any>; go: (t: Tab) => void }) {
+function OutboxReply({ rep, busy, run }: { rep: any; busy: boolean; run: (fn: () => Promise<any>, ok?: string) => Promise<any> }) {
   const r = rep.reply
   const card = rep.card
   const first = r.from_name.split(' ')[0]
@@ -256,12 +256,10 @@ function OutboxReply({ rep, busy, run, go }: { rep: any; busy: boolean; run: (fn
               Copy draft
             </button>
             {card.saved ? (
-              <button className="btn btn-ghost btn-small" onClick={() => go('people')}>
-                In your people
-              </button>
+              <span className="chip chip-keep">Saved to your network</span>
             ) : (
-              <button className="btn btn-primary btn-small" disabled={busy} onClick={() => run(() => api(`/api/exchange/cards/${card.id}/save`, { method: 'POST' }), `${card.name} added to your people`)}>
-                Add to my people
+              <button className="btn btn-primary btn-small" disabled={busy} onClick={() => run(() => api(`/api/exchange/cards/${card.id}/save`, { method: 'POST' }), `${card.name} added to your network`)}>
+                Add to my network
               </button>
             )}
           </div>

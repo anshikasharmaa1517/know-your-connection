@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
-import { PersonSheet } from './People'
+import { PersonSheet } from '../components/PersonSheet'
+import { NetworkMap } from '../components/NetworkMap'
 import type { AskDraft, Tab } from '../App'
 
 type GoalRow = { goal: { id: string; text: string; status: string; created_at: number }; people: number; gaps: number }
@@ -34,6 +35,7 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
   const [editing, setEditing] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const [showPast, setShowPast] = useState(false)
+  const [view, setView] = useState<'list' | 'map'>('list')
   const toast = useToast()
 
   const loadList = useCallback(async () => {
@@ -255,11 +257,31 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
             </div>
           ))}
 
-          {detail.goal.status === 'open' && (
+          {detail.goal.status === 'open' && detail.ranking.length > 0 && (
+            <div className="spread">
+              <span className="small muted">
+                {detail.ranking.length} {detail.ranking.length === 1 ? 'person fits' : 'people fit'} this goal
+              </span>
+              <div className="segmented" role="tablist" aria-label="View">
+                <button role="tab" aria-selected={view === 'list'} onClick={() => setView('list')}>
+                  List
+                </button>
+                <button role="tab" aria-selected={view === 'map'} onClick={() => setView('map')}>
+                  Map
+                </button>
+              </div>
+            </div>
+          )}
+
+          {detail.goal.status === 'open' && view === 'map' && detail.ranking.length > 0 && (
+            <NetworkMap key={`${detail.goal.id}-${detail.goal.ranked_at}`} goalId={detail.goal.id} onOpen={setOpen} />
+          )}
+
+          {detail.goal.status === 'open' && (view === 'list' || detail.ranking.length === 0) && (
             <div className="panel" style={{ paddingBlock: 4 }}>
               {detail.ranking.length === 0 ? (
                 <p className="muted" style={{ padding: '12px 0' }}>
-                  No one in your network fits yet. Keep more connections, record a memo, or ask your network.
+                  No one in your network fits yet. Keep more connections, add notes to people, or ask your network.
                 </p>
               ) : (
                 <ol className="list">

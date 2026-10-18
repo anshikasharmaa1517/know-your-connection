@@ -7,17 +7,15 @@ import { FindView } from './views/Find'
 import { GoalsView } from './views/Goals'
 import { ImportView } from './views/Import'
 import { OptInPage } from './views/OptIn'
-import { PeopleView } from './views/People'
 import { SignIn } from './views/SignIn'
 
-export type Tab = 'import' | 'people' | 'find' | 'goals' | 'ask'
+export type Tab = 'import' | 'goals' | 'find' | 'ask'
 export type AskDraft = { need: string; description: string; gap_id?: string; goal_id?: string; goal: string }
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'import', label: 'Import' },
-  { id: 'people', label: 'People' },
-  { id: 'find', label: 'Find' },
   { id: 'goals', label: 'Goals' },
+  { id: 'find', label: 'Find' },
   { id: 'ask', label: 'Ask' },
 ]
 
@@ -97,7 +95,6 @@ function Shell() {
 
       <main key={account.user.id}>
         {tab === 'import' && <ImportView go={go} />}
-        {tab === 'people' && <PeopleView go={go} />}
         {tab === 'find' && <FindView go={go} myName={me.user.name} plan={me.plan} onPlan={(plan) => setMe({ ...me, plan })} />}
         {tab === 'goals' && (
           <GoalsView

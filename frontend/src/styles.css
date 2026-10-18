@@ -1138,7 +1138,7 @@ mark {
 /* Find ------------------------------------------------------------------- */
 
 .tabs-inner {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .find-form {
@@ -1713,4 +1713,17 @@ mark {
 
 .past-goals .person-row[aria-pressed='true'] .person-name {
   text-decoration: underline;
+}
+
+.map-legend .key-fit {
+  background: var(--keep);
+  border-color: var(--keep);
+}
+
+.hit-name {
+  color: var(--ink);
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
 }

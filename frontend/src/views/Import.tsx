@@ -320,8 +320,8 @@ function SwipeDeck({ importId, go, onNewer }: { importId: string; go: (t: Tab) =
             <button className="btn btn-primary" onClick={() => go('goals')}>
               Set a goal
             </button>
-            <button className="btn btn-quiet" onClick={() => go('people')}>
-              See your people
+            <button className="btn btn-quiet" onClick={() => go('find')}>
+              Find someone
             </button>
           </div>
           <div className="row" style={{ justifyContent: 'center' }}>

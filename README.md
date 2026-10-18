@@ -5,7 +5,7 @@ A personal CRM where AI agents walk your relationship graph, built on **FalkorDB
 You meet thirty new people a month and remember a third of them. LinkedIn shows connections with no context, and the friend across the table who knows exactly who you need never mentions it. Connections fixes both without scraping anyone:
 
 1. **Import.** Upload the export LinkedIn gives you of your own connections. Every row becomes a card. Nobody is added until you swipe: right to keep, up for your inner circle, left to skip.
-2. **Notes.** Open anyone you kept and add a one-line note ("hiring a summer intern", "wants a cofounder"). It becomes a `Fact` on that person with its own `Source`, and Find searches it, so "hiring intern" finds Priya even though her title says Investment Associate.
+2. **Notes.** Open anyone from a goal or a Find result and add a one-line note ("hiring a summer intern", "wants a cofounder"). It becomes a `Fact` on that person with its own `Source`, and Find searches it, so "hiring intern" finds Priya even though her title says Investment Associate.
 3. **Aim.** Set a goal ("summer 2027 VC internship") and your network re-ranks around it, with a reason and receipts per person. Change the goal, the ranking rebuilds. Close it, the ranking disappears. Open goals also reorder the import deck so the connections that fit come first.
 4. **Find the gap.** When a goal needs a kind of person you have no path to, the app says so: "No warm path to climate-tech VC."
 5. **Find.** Type a role like "SDE", or something you noted like "hiring intern", and the app walks your graph and your friends' graphs, then lists matches by degree: people you know first, then people your friends know, with the path ("Through Bhavya"). No request or approval round trip. 3rd degree (your friends' friends) is a Pro feature because it walks many more graphs.
@@ -122,7 +122,7 @@ Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis:/
 1. Create an account. On Import, choose **Try it with sample connections** (fictional people) or upload a real export.
 2. Swipe a few: right, up, left. Press Z to undo one. Point out that nothing was added before the swipe.
 3. Goals: add "Summer 2027 VC internship". Show the gap if nothing fits yet, then go back to Import: the investors now lead the deck with the matching words underlined. Keep a few and press **Re-rank**. Each person has a reason and a receipt pointing at the LinkedIn export.
-4. Notes: in People, open Priya Raman and add "Wants to hire a summer intern". In Find, tap **Hiring intern**: Priya comes up first with your note highlighted, although her title says Investment Associate.
+4. Notes: in Find, search "investor", open Priya Raman and add "Wants to hire a summer intern". In Find, tap **Hiring intern**: Priya comes up first with your note highlighted, although her title says Investment Associate.
 5. Open the account menu, add a second account ("Bhavya"), import the **Second sample set**, and add each other as friends by handle.
 6. As the first account, open the gap on a goal and choose **Ask your network**. The reply shows a count only. Ask for an intro, switch to Bhavya, pick the contact and copy the opt-in link. Open it, write the card, share. Back as the first account, the card and intro draft appear.
 7. Find: add a third account, import the **Second sample set** on it, and friend it from the first. As the first account, open Find and search "SDE": your own SDEs are 1st degree, the friend's are 2nd degree with "Ask for an intro". Press **Try Pro** to walk 3rd degree.
@@ -147,7 +147,7 @@ backend/app/
   exchange.py    PostRequest, Answer, AskForIntro, Approve, OptIn, Reveal
   network.py     people, sources, deletion with provenance, embeddings
   llm.py         AWS Bedrock (forced tool use) or OpenAI (structured outputs), plus offline heuristics
-frontend/src/    React app (swipe deck, people and notes, find, goals, ask, opt-in page)
+frontend/src/    React app (swipe deck, goals with list and map, find, person cards with notes, ask, opt-in page)
 samples/         a fictional Connections.csv for demos and tests
 ```
 
