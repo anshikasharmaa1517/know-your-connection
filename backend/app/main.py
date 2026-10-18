@@ -385,6 +385,24 @@ def close_goal(gid: str, v: Viewer = Depends(viewer)):
     return goals_mod.close_goal(graph_of(v), gid)
 
 
+@app.post("/api/goals/{gid}/gaps/{gap_id}/ask")
+def ask_network(gid: str, gap_id: str, depth: int = 2, v: Viewer = Depends(viewer)):
+    """Run friends' agents on one gap of a goal, right away."""
+    g = graph_of(v)
+    found = one(
+        g,
+        "MATCH (goal:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap {id:$id}) "
+        "RETURN goal.text AS goal, gap.need AS need, gap.description AS description, gap.keywords AS keywords",
+        {"gid": gid, "id": gap_id},
+    )
+    if not found:
+        raise HTTPException(status_code=404, detail="gap not found")
+    return search_mod.ask_network(
+        get_store(), v.id, need=found["need"], description=found["description"] or "",
+        keywords=found["keywords"] or [], goal=found["goal"], depth=3 if depth >= 3 else 2,
+    )
+
+
 @app.post("/api/goals/{gid}/reopen")
 def reopen_goal(gid: str, v: Viewer = Depends(viewer)):
     return goals_mod.reopen_goal(graph_of(v), gid)

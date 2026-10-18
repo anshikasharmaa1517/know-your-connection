@@ -220,6 +220,7 @@ def match_need(label: str, plan: GoalPlan) -> str:
 
 
 _GENERIC_HEADS = {"manager", "engineer", "lead", "partner", "officer", "director", "specialist", "consultant", "executive", "associate", "leader", "developer"}
+_FILLER_HEADS = {"role", "roles", "job", "jobs", "position", "positions", "opportunity", "opportunities", "opening", "openings", "internship", "internships", "referral", "referrals"}
 _LINKER_RE = re.compile(r"\b(for|at|in|with|who|from|on|of)\b")
 
 
@@ -228,6 +229,8 @@ def head_phrase(label: str) -> str:
     'career coach for remote work' -> 'coach', 'remote-first hiring manager' -> 'hiring manager'."""
     core = _LINKER_RE.split((label or "").lower())[0]
     words = [w for w in re.findall(r"[a-z0-9]+", core) if w]
+    while len(words) > 1 and words[-1] in _FILLER_HEADS:
+        words.pop()
     if not words:
         return ""
     if words[-1].rstrip("s") in _GENERIC_HEADS and len(words) > 1:

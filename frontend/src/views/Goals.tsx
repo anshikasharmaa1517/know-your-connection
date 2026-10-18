@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, formatDate } from '../api'
+import { api, copy, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
 import { NetworkMap } from '../components/NetworkMap'
-import type { AskDraft, Tab } from '../App'
+import type { Tab } from '../App'
+import { openFriends } from '../components/Friends'
+import { introMessage, pathText, Scan, type Hop } from './Find'
 
 type GoalRow = { goal: { id: string; text: string; status: string; created_at: number }; people: number; gaps: number }
 
@@ -26,7 +28,7 @@ type GoalDetail = {
   gaps: Gap[]
 }
 
-export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) => void }) {
+export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) {
   const [goals, setGoals] = useState<GoalRow[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [detail, setDetail] = useState<GoalDetail | null>(null)
@@ -243,18 +245,7 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
             <div className="gap" key={gap.id}>
               <h3>{gap.text}</h3>
               <p className="small muted">{gap.description}</p>
-              {gap.request_id ? (
-                <p className="small">You asked your network. Check Ask for replies.</p>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  onClick={() =>
-                    ask({ need: gap.need, description: gap.description, gap_id: gap.id, goal_id: detail.goal.id, goal: detail.goal.text })
-                  }
-                >
-                  Ask your network
-                </button>
-              )}
+              <GapAsk goalId={detail.goal.id} gapId={gap.id} need={gap.need} myName={myName} />
             </div>
           ))}
 
@@ -334,6 +325,151 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
         </p>
       )}
       {open && <PersonSheet id={open} onClose={() => setOpen(null)} />}
+    </div>
+  )
+}
+
+
+type AgentHit = {
+  key: string
+  name: string
+  position: string
+  company: string
+  headline: string
+  url: string
+  degree: number
+  paths: Hop[][]
+  score: number
+  reason: string
+}
+type AgentResult = {
+  need: string
+  plan: 'free' | 'pro'
+  friends: string[]
+  scanned: { friends: number; fof: number }
+  third: { locked: boolean; networks: number }
+  people: AgentHit[]
+}
+
+/** "Ask your network": friends' agents search their own graphs for this gap, right away. */
+function GapAsk({ goalId, gapId, need, myName }: { goalId: string; gapId: string; need: string; myName: string }) {
+  const [state, setState] = useState<'idle' | 'running' | 'done'>('idle')
+  const [result, setResult] = useState<AgentResult | null>(null)
+  const toast = useToast()
+
+  const run = async (depth = 2) => {
+    setState('running')
+    try {
+      const [r] = await Promise.all([
+        api<AgentResult>(`/api/goals/${goalId}/gaps/${gapId}/ask?depth=${depth}`, { method: 'POST' }),
+        new Promise((ok) => window.setTimeout(ok, 1200)),
+      ])
+      setResult(r)
+      setState('done')
+    } catch (e: any) {
+      toast(e.message)
+      setState(result ? 'done' : 'idle')
+    }
+  }
+
+  const tryPro = async () => {
+    await api('/api/settings', { method: 'PATCH', body: { plan: 'pro' } })
+    run(3)
+  }
+
+  if (state === 'idle') {
+    return (
+      <button className="btn btn-primary" onClick={() => run()}>
+        Ask your network
+      </button>
+    )
+  }
+  if (state === 'running') {
+    return <Scan query={need} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
+  }
+  if (!result) return null
+
+  if (result.scanned.friends === 0) {
+    return (
+      <div className="stack" style={{ gap: 8 }}>
+        <p className="small">You have no friends added yet, so there are no agents to ask.</p>
+        <button className="btn btn-quiet btn-small" onClick={openFriends}>
+          Add a friend
+        </button>
+      </div>
+    )
+  }
+
+  const byFriend: Record<string, number> = {}
+  result.people.forEach((p) => {
+    const f = p.paths[0]?.[0]?.name
+    if (f) byFriend[f] = (byFriend[f] ?? 0) + 1
+  })
+  const summary = result.friends
+    .map((f) => `${f.split(' ')[0]}'s agent found ${byFriend[f] ?? 0}`)
+    .join(', ')
+
+  return (
+    <div className="stack agent-results" style={{ gap: 8 }}>
+      <p className="small">
+        <strong>{summary}.</strong>{' '}
+        {result.people.length === 0 ? 'Nobody in their networks fits this yet.' : 'Only their public profile was used, never their notes.'}
+      </p>
+      {result.people.map((h) => {
+        const intro = introMessage(h, myName)
+        return (
+          <div className="person-row hit" key={h.key}>
+            <Avatar name={h.name} tie={h.degree === 2 ? 'via' : 'none'} size={40} />
+            <span className="grow">
+              <span className="person-name">{h.name}</span>
+              <span className="small muted" style={{ display: 'block' }}>
+                {[h.position, h.company].filter(Boolean).join(' at ') || h.headline}
+              </span>
+              <span className="small" style={{ display: 'block' }}>
+                {h.reason}
+              </span>
+              <span className="tiny faint" style={{ display: 'block' }}>
+                {pathText(h.paths[0] ?? [])}
+              </span>
+              <button
+                className="link-button small"
+                onClick={async () => toast((await copy(intro.text)) ? `Copied a message for ${intro.to.split(' ')[0]}` : 'Copy failed')}
+              >
+                Ask {intro.to.split(' ')[0]} for an intro
+              </button>
+            </span>
+            <span className="hit-actions">
+              <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />
+              {h.url && (
+                <a className="btn btn-ghost btn-small" href={h.url} target="_blank" rel="noreferrer" aria-label={`${h.name} on LinkedIn`}>
+                  in
+                </a>
+              )}
+            </span>
+          </div>
+        )
+      })}
+      <div className="row row-wrap">
+        {result.scanned.fof > 0 ? null : result.plan === 'pro' ? (
+          result.third.networks > 0 && (
+            <button className="btn btn-quiet btn-small" onClick={() => run(3)}>
+              Also ask friends of friends
+            </button>
+          )
+        ) : (
+          result.third.networks > 0 && (
+            <>
+              <button className="btn btn-quiet btn-small" onClick={tryPro}>
+                Ask friends of friends (Pro)
+              </button>
+              <span className="tiny faint">{result.third.networks} more networks. Demo plan switch, no payment.</span>
+            </>
+          )
+        )}
+        <button className="btn btn-ghost btn-small" onClick={() => run(result.scanned.fof > 0 ? 3 : 2)}>
+          Ask again
+        </button>
+      </div>
     </div>
   )
 }

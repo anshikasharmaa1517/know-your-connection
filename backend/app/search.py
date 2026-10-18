@@ -19,6 +19,7 @@ import time
 
 from falkordb import Graph
 
+from .config import get_settings
 from .db import Store, rows
 from .llm import STOPWORDS, get_model
 from .users import reach, settings_of
@@ -362,3 +363,80 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
     result["ms"] = int((time.time() - started) * 1000)
     return result
 
+
+
+# --------------------------------------------------------------------------
+# Ask your network: friends' agents search their owners' graphs for one need.
+#
+# Triggered from a gap on a goal. No form and no approval: each friend who leaves
+# "friends can find my contacts" on is searched directly, candidates are scored by the
+# model against the need, and only profile fields (name, title, company, link) are used,
+# never a friend's notes or memos.
+
+AGENT_POOL = 40
+
+
+def ask_network(store: Store, uid: str, *, need: str, description: str, keywords: list[str], goal: str, depth: int = 2) -> dict:
+    from .goals import head_phrase  # local import: goals imports network, not search
+    from .llm import GoalPlan, Need
+
+    settings = settings_of(store, uid)
+    net = reach(store, uid)
+    third_allowed = settings["plan"] == THIRD_DEGREE_PLAN
+    head = head_phrase(need)
+    spec = expand(head) if head else {"phrases": [], "must": []}
+    phrases: list[str] = []
+    for p in [*spec["phrases"], head, *[k.lower() for k in keywords]]:
+        p = _norm(p)
+        if p and len(p) > 1 and p not in GENERIC and p not in phrases:
+            phrases.append(p)
+    result = {
+        "need": need,
+        "plan": settings["plan"],
+        "friends": [f["name"] for f in net["friends"]],
+        "scanned": {"friends": len(net["friends"]), "fof": 0},
+        "third": {"locked": not third_allowed, "networks": len(net["fof"])},
+        "people": [],
+    }
+    if not phrases or not net["friends"]:
+        return result
+
+    pattern = _pattern(phrases)
+    terms = _prefilter_terms(phrases)
+    c = _Collector(pattern, [])
+    # Your own contacts first, so anyone you already know is left to the goal's ranking.
+    c.add(_direct(store.user(uid), terms), 1, [], own=True)
+    friend_graphs = []
+    for f in net["friends"]:
+        g = store.user(f["id"])  # read only: profile fields, never their notes or facts
+        friend_graphs.append((f, g))
+        c.add(_direct(g, terms), 2, [{"name": f["name"], "kind": "friend"}])
+    if depth >= 3 and third_allowed:
+        for ff in net["fof"]:
+            g = store.user(ff["id"])
+            c.add(_direct(g, terms), 3, [{"name": ff["through"][0], "kind": "friend"}, {"name": ff["name"], "kind": "friend"}])
+        result["scanned"]["fof"] = len(net["fof"])
+
+    head_hits = {_norm(p) for p in (spec["phrases"] or [head])}
+    candidates = [r for r in c.found.values() if r["degree"] > 1]
+    candidates.sort(key=lambda r: (r["degree"], -sum(m in head_hits for m in r["matched"]), -len(r["matched"])))
+    candidates = candidates[:AGENT_POOL]
+    if not candidates:
+        return result
+
+    plan = GoalPlan(summary=goal, needs=[Need(label=need, description=description or need, keywords=phrases[:24])])
+    payload = [
+        {"id": r["key"], "name": r["name"], "headline": r["headline"] or ", ".join(filter(None, [r["position"], r["company"]])), "tie": "friend", "strength": None, "facts": []}
+        for r in candidates
+    ]
+    scores = {s.person_id: s for s in get_model().score_people(f"{goal}. Looking for: {need}", plan, payload).scores}
+    floor = get_settings().relevance_floor
+    people = []
+    for r in candidates:
+        s = scores.get(r["key"])
+        if not s or s.score < floor:
+            continue
+        people.append({**r, "score": max(0, min(100, int(s.score))), "reason": s.reason.strip()})
+    people.sort(key=lambda r: (r["degree"], -r["score"]))
+    result["people"] = people
+    return result

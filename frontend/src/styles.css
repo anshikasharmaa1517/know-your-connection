@@ -1138,7 +1138,7 @@ mark {
 /* Find ------------------------------------------------------------------- */
 
 .tabs-inner {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .find-form {
@@ -1728,3 +1728,17 @@ mark {
   text-underline-offset: 3px;
 }
 .goal-bar > .grow { flex: 1; }
+
+.account-button {
+  position: relative;
+}
+
+.account-badge {
+  top: -4px;
+  left: auto;
+  right: -4px;
+}
+
+.agent-results .person-row {
+  align-items: flex-start;
+}

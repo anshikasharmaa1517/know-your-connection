@@ -3,9 +3,10 @@ import { api, copy } from '../api'
 import { Avatar } from '../components/Ring'
 import { Highlight, Spinner, useToast } from '../components/ui'
 import { PersonSheet } from '../components/PersonSheet'
+import { openFriends } from '../components/Friends'
 import type { Tab } from '../App'
 
-type Hop = { name: string; kind: 'friend' | 'contact' }
+export type Hop = { name: string; kind: 'friend' | 'contact' }
 type Hit = {
   key: string
   person_id: string | null
@@ -39,14 +40,14 @@ function noteWords(note: string, query: string): string[] {
   return note.split(/[^A-Za-z0-9-]+/).filter((w) => want.some((q) => stem(w).startsWith(q)))
 }
 
-function pathText(path: Hop[]): string {
+export function pathText(path: Hop[]): string {
   if (!path.length) return ''
   const [first, ...rest] = path
   const head = first.kind === 'friend' ? first.name : `${first.name}, one of your contacts`
   return rest.length ? `Through ${head}, then ${rest.map((h) => h.name).join(', then ')}` : `Through ${head}`
 }
 
-function introMessage(hit: Hit, myName: string): { to: string; text: string } {
+export function introMessage(hit: Pick<Hit, 'name' | 'position' | 'company' | 'paths'>, myName: string): { to: string; text: string } {
   const to = hit.paths[0]?.[0]?.name ?? ''
   const role = [hit.position, hit.company].filter(Boolean).join(' at ')
   const next = hit.paths[0]?.[1]?.name
@@ -57,7 +58,7 @@ function introMessage(hit: Hit, myName: string): { to: string; text: string } {
 }
 
 export function FindView({
-  go,
+  go: _go,
   myName,
   plan,
   onPlan,
@@ -182,14 +183,14 @@ export function FindView({
             empty={
               result.scanned.friends
                 ? "None of your friends' contacts fit this."
-                : 'Add friends on the Ask tab to search the people they know.'
+                : 'Add friends from the account menu to search the people they know.'
             }
             myName={myName}
             query={result.query}
           />
 
           {result.scanned.friends === 0 && (
-            <button className="btn btn-quiet btn-small" onClick={() => go('ask')}>
+            <button className="btn btn-quiet btn-small" onClick={openFriends}>
               Add a friend to search their contacts
             </button>
           )}
@@ -334,10 +335,10 @@ function HitList({ hits, myName, query }: { hits: Hit[]; myName: string; query: 
 
 const STAGES = ['Your contacts', "Your friends' contacts", 'Ordering by degree']
 
-function Scan({ query }: { query: string }) {
+export function Scan({ query, stages = STAGES, label = 'Looking for' }: { query: string; stages?: string[]; label?: string }) {
   const [stage, setStage] = useState(0)
   useEffect(() => {
-    const t = window.setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length - 1)), 420)
+    const t = window.setInterval(() => setStage((s) => Math.min(s + 1, stages.length - 1)), 420)
     return () => window.clearInterval(t)
   }, [])
   return (
@@ -353,10 +354,10 @@ function Scan({ query }: { query: string }) {
         ))}
       </div>
       <p className="scan-label">
-        Looking for <strong>{query.trim()}</strong>
+        {label} <strong>{query.trim()}</strong>
       </p>
       <ol className="scan-stages">
-        {STAGES.map((s, i) => (
+        {stages.map((s, i) => (
           <li key={s} className={i < stage ? 'done' : i === stage ? 'now' : ''}>
             {s}
           </li>

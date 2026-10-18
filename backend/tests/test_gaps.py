@@ -106,3 +106,10 @@ def test_goal_map_has_everyone_ranked_even_in_big_networks(client, monkeypatch):
     m = client.get(f"/api/graph?goal={g['goal']['id']}", headers=h).json()
     assert ranked <= {p["id"] for p in m["people"]}
     assert {r["id"] for r in m["relevant"]} == ranked
+
+
+def test_head_phrase_skips_filler():
+    from app.goals import head_phrase
+
+    assert head_phrase("SDE role at a product startup") == "sde"
+    assert head_phrase("backend engineer job") == "backend engineer"

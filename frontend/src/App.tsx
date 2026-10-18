@@ -2,21 +2,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, currentAccount, forgetAccount, listAccounts, switchAccount, type User } from './api'
 import { Avatar, Wordmark } from './components/Ring'
 import { Icon, Sheet, ToastProvider } from './components/ui'
-import { AskView } from './views/Ask'
+import { Friends } from './components/Friends'
 import { FindView } from './views/Find'
 import { GoalsView } from './views/Goals'
 import { ImportView } from './views/Import'
 import { OptInPage } from './views/OptIn'
 import { SignIn } from './views/SignIn'
 
-export type Tab = 'import' | 'goals' | 'find' | 'ask'
-export type AskDraft = { need: string; description: string; gap_id?: string; goal_id?: string; goal: string }
+export type Tab = 'import' | 'goals' | 'find'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'import', label: 'Import' },
   { id: 'goals', label: 'Goals' },
   { id: 'find', label: 'Find' },
-  { id: 'ask', label: 'Ask' },
 ]
 
 function tabFromHash(): Tab {
@@ -33,7 +31,6 @@ function Shell() {
   const [account, setAccount] = useState(currentAccount())
   const [me, setMe] = useState<{ user: User; llm: boolean; model: string; provider: string; voice: boolean; plan: 'free' | 'pro'; discoverable: boolean } | null>(null)
   const [tab, setTab] = useState<Tab>(tabFromHash())
-  const [draft, setDraft] = useState<AskDraft | null>(null)
   const [badge, setBadge] = useState(0)
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -42,6 +39,12 @@ function Shell() {
     setTab(t)
     window.location.hash = t
     window.scrollTo({ top: 0 })
+  }, [])
+
+  useEffect(() => {
+    const open = () => setAccountsOpen(true)
+    window.addEventListener('connections:friends', open)
+    return () => window.removeEventListener('connections:friends', open)
   }, [])
 
   useEffect(() => {
@@ -66,8 +69,8 @@ function Shell() {
   useEffect(() => {
     if (!account) return
     const poll = () =>
-      Promise.all([api('/api/exchange/inbox'), api('/api/friends')])
-        .then(([i, f]) => setBadge(i.requests.filter((r: any) => r.reply?.status === 'intro_requested').length + f.incoming.length))
+      api('/api/friends')
+        .then((f) => setBadge(f.incoming.length))
         .catch(() => {})
     poll()
     const t = window.setInterval(poll, 10000)
@@ -90,22 +93,14 @@ function Shell() {
         <button className="account-button" onClick={() => setAccountsOpen(true)} aria-label={`Signed in as ${me.user.name}. Switch account`}>
           <Avatar name={me.user.name} size={28} />
           {me.user.name.split(' ')[0]}
+          {badge > 0 && <span className="tab-badge account-badge">{badge}</span>}
         </button>
       </header>
 
       <main key={account.user.id}>
         {tab === 'import' && <ImportView go={go} />}
         {tab === 'find' && <FindView go={go} myName={me.user.name} plan={me.plan} onPlan={(plan) => setMe({ ...me, plan })} />}
-        {tab === 'goals' && (
-          <GoalsView
-            go={go}
-            ask={(d) => {
-              setDraft(d)
-              go('ask')
-            }}
-          />
-        )}
-        {tab === 'ask' && <AskView draft={draft} clearDraft={() => setDraft(null)} me={me.user} go={go} onInbox={setBadge} />}
+        {tab === 'goals' && <GoalsView go={go} myName={me.user.name} />}
       </main>
 
       <nav className="tabs" aria-label="Sections">
@@ -114,7 +109,6 @@ function Shell() {
             <button key={t.id} className="tab" aria-current={tab === t.id ? 'page' : undefined} onClick={() => go(t.id)}>
               <Icon name={t.id} />
               {t.label}
-              {t.id === 'ask' && badge > 0 && <span className="tab-badge">{badge}</span>}
             </button>
           ))}
         </div>
@@ -124,7 +118,7 @@ function Shell() {
         <Sheet onClose={() => setAccountsOpen(false)} label="Accounts">
           <h2>Accounts on this device</h2>
           <p className="small muted">
-            Each account has its own graph. Switching is handy for demoing the Exchange between two people.
+            Each account has its own graph. Switching is handy for demoing friends' agents between two people.
           </p>
           <div>
             {listAccounts().map((a) => (
@@ -150,6 +144,7 @@ function Shell() {
           <button className="btn btn-quiet" onClick={() => setAdding(true)}>
             Add another account
           </button>
+          <Friends handle={me.user.handle} onChange={setBadge} />
           <div className="section-title">Search</div>
           <label className="toggle-row">
             <input

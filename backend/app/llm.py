@@ -215,6 +215,8 @@ def expand_keywords(text: str) -> list[str]:
 
 def keyword_hits(keywords: list[str], text: str) -> list[str]:
     text_words = set(words(text))
+    # "SDE-1" should hit "sde": also index the parts of hyphenated words.
+    text_words |= {part for w in list(text_words) if "-" in w for part in w.split("-") if part}
     low = (text or "").lower()
     hits = []
     for kw in keywords:
