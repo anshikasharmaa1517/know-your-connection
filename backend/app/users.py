@@ -167,3 +167,66 @@ def reach(store: Store, uid: str) -> dict:
         {"id": uid},
     )
     return {"friends": friends_, "fof": fof}
+
+
+# --------------------------------------------------------------------------
+# Status: one line a person writes about themselves ("Hiring SDE interns at Confluent").
+# Linked to their LinkedIn profile, so it attaches to them wherever they sit in someone's network.
+
+STATUS_MAX = 200
+
+
+def li_key(url: str | None) -> str:
+    """Normalise a LinkedIn profile URL to 'linkedin.com/in/<slug>' so different spellings match."""
+    u = (url or "").strip().lower()
+    u = re.sub(r"^https?://", "", u)
+    u = re.sub(r"^([a-z]{2,3}\.)?(www\.)?", "", u) if "linkedin.com" in u else u
+    u = u.split("?")[0].split("#")[0].rstrip("/")
+    return u if u.startswith("linkedin.com/in/") else ""
+
+
+def profile_of(store: Store, uid: str) -> dict:
+    found = one(store.shared(), "MATCH (u:User {id:$id}) RETURN u.status AS status, u.linkedin_url AS linkedin_url, u.status_at AS status_at", {"id": uid}) or {}
+    return {"status": found.get("status") or "", "linkedin_url": found.get("linkedin_url") or "", "status_at": found.get("status_at")}
+
+
+def update_profile(store: Store, uid: str, *, status: str | None = None, linkedin_url: str | None = None) -> dict:
+    shared = store.shared()
+    if status is not None:
+        status = re.sub(r"\s+", " ", status).strip()
+        if len(status) > STATUS_MAX:
+            raise UserError(f"keep your status under {STATUS_MAX} characters")
+        run(shared, "MATCH (u:User {id:$id}) SET u.status = $s, u.status_at = $now", {"id": uid, "s": status, "now": now_ms()})
+    if linkedin_url is not None:
+        key = li_key(linkedin_url)
+        if linkedin_url.strip() and not key:
+            raise UserError("that doesn't look like a LinkedIn profile link (linkedin.com/in/...)")
+        run(shared, "MATCH (u:User {id:$id}) SET u.linkedin_url = $u, u.li_key = $k", {"id": uid, "u": linkedin_url.strip(), "k": key})
+    return profile_of(store, uid)
+
+
+def statuses_for(store: Store, keys: list[str]) -> dict[str, dict]:
+    """Statuses of app users whose LinkedIn profile is one of these keys."""
+    keys = [k for k in dict.fromkeys(keys) if k]
+    if not keys:
+        return {}
+    found = rows(
+        store.shared(),
+        "UNWIND $keys AS k MATCH (u:User {li_key:k}) WHERE coalesce(u.status, '') <> '' "
+        "RETURN k AS key, u.id AS id, u.name AS name, u.status AS status",
+        {"keys": keys},
+    )
+    return {f["key"]: f for f in found}
+
+
+def statuses_matching(store: Store, stems: list[str]) -> list[dict]:
+    """Every app user with a status mentioning one of these word stems (filtered further by the caller)."""
+    if not stems:
+        return []
+    return rows(
+        store.shared(),
+        "MATCH (u:User) WHERE coalesce(u.status, '') <> '' AND any(t IN $stems WHERE toLower(u.status) CONTAINS t) "
+        "RETURN u.id AS id, u.name AS name, u.handle AS handle, u.status AS status, u.linkedin_url AS linkedin_url, "
+        "coalesce(u.li_key, '') AS li_key, coalesce(u.discoverable, true) AS discoverable LIMIT 200",
+        {"stems": stems},
+    )

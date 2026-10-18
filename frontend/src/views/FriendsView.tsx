@@ -3,14 +3,41 @@ import { api, copy } from '../api'
 import { Avatar } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
 
-type Friend = { id: string; name: string; handle: string; contacts?: number; discoverable?: boolean }
+type Friend = { id: string; name: string; handle: string; contacts?: number; discoverable?: boolean; status?: string }
 type Data = { friends: Friend[]; incoming: Friend[]; outgoing: Friend[] }
 
 export function FriendsView({ handle: myHandle, onBadge }: { handle: string; onBadge: (n: number) => void }) {
   const [data, setData] = useState<Data | null>(null)
   const [handle, setHandle] = useState('')
   const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [linkedin, setLinkedin] = useState('')
+  const [savedProfile, setSavedProfile] = useState<{ status: string; linkedin_url: string } | null>(null)
   const toast = useToast()
+
+  useEffect(() => {
+    api('/api/me')
+      .then((m) => {
+        setSavedProfile(m.profile)
+        setStatus(m.profile?.status ?? '')
+        setLinkedin(m.profile?.linkedin_url ?? '')
+      })
+      .catch(() => {})
+  }, [])
+
+  const saveProfile = async () => {
+    setBusy(true)
+    try {
+      const p = await api('/api/profile', { method: 'PATCH', body: { status, linkedin_url: linkedin } })
+      setSavedProfile(p)
+      toast(p.status ? 'Status saved' : 'Status cleared')
+    } catch (e: any) {
+      toast(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const profileChanged = savedProfile !== null && (status.trim() !== savedProfile.status || linkedin.trim() !== savedProfile.linkedin_url)
 
   const load = useCallback(async () => {
     const f = await api<Data>('/api/friends')
@@ -45,6 +72,43 @@ export function FriendsView({ handle: myHandle, onBadge }: { handle: string; onB
           Your friends' agents search their networks when a goal has a gap, and Find shows who they know as 2nd degree.
         </p>
       </div>
+
+      <section className="panel stack">
+        <div className="section-title">Your status</div>
+        <form
+          className="stack"
+          style={{ gap: 8 }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            saveProfile()
+          }}
+        >
+          <input
+            className="input"
+            value={status}
+            maxLength={200}
+            onChange={(e) => setStatus(e.target.value)}
+            placeholder="Hiring SDE interns at Confluent, looking for a remote frontend role..."
+            aria-label="Your status"
+          />
+          <input
+            className="input"
+            value={linkedin}
+            onChange={(e) => setLinkedin(e.target.value)}
+            placeholder="Your LinkedIn profile link (linkedin.com/in/...)"
+            aria-label="Your LinkedIn profile link"
+          />
+          <p className="tiny faint" style={{ margin: 0 }}>
+            Shown to your friends and their friends wherever you appear in their network. Your LinkedIn link lets the app recognise you in
+            their LinkedIn contacts.
+          </p>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn btn-primary btn-small" disabled={busy || !profileChanged}>
+              Save
+            </button>
+          </div>
+        </form>
+      </section>
 
       <section className="panel stack">
         <div className="section-title">Add a friend</div>
@@ -117,6 +181,7 @@ export function FriendsView({ handle: myHandle, onBadge }: { handle: string; onB
                         <span className="small muted" style={{ display: 'block' }}>
                           {f.handle}
                         </span>
+                        {f.status && <span className="hit-status small">{f.status}</span>}
                         <span className="tiny faint" style={{ display: 'block' }}>
                           {f.discoverable
                             ? `${f.contacts ?? 0} ${f.contacts === 1 ? 'contact' : 'contacts'} their agent can search`

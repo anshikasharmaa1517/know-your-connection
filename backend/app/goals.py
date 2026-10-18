@@ -142,14 +142,14 @@ def _pool(g: Graph) -> dict[str, dict]:
         g,
         "MATCH (:Me)-[k:KNOWS]->(p:Person) "
         "RETURN p.id AS id, p.name AS name, p.headline AS headline, p.company AS company, "
-        "p.position AS position, k.strength AS strength",
+        "p.position AS position, p.linkedin_url AS url, k.strength AS strength",
     )
     pool = {d["id"]: {**d, "tie": "direct", "via_id": None, "via_name": None} for d in direct}
     second = rows(
         g,
         "MATCH (:Me)-[:KNOWS]->(v:Person)-[t:KNOWS]-(p:Person) WHERE NOT (:Me)-[:KNOWS]->(p) "
         "RETURN p.id AS id, p.name AS name, p.headline AS headline, p.company AS company, "
-        "p.position AS position, v.id AS via_id, v.name AS via_name, t.relation AS relation",
+        "p.position AS position, p.linkedin_url AS url, v.id AS via_id, v.name AS via_name, t.relation AS relation",
     )
     for s in second:
         if s["id"] in pool:
@@ -165,7 +165,21 @@ def _pool(g: Graph) -> dict[str, dict]:
             pool[f["pid"]]["facts"] = f["facts"][:15]
     for p in pool.values():
         p.setdefault("facts", [])
+    attach_statuses(list(pool.values()))
     return pool
+
+
+def attach_statuses(people: list[dict]) -> None:
+    """Add what app users wrote about themselves as a 'status' fact, matched by LinkedIn profile."""
+    from .users import li_key, statuses_for
+
+    keys = {li_key(p.get("url")): p for p in people if p.get("url")}
+    keys.pop("", None)
+    for k, st in statuses_for(get_store(), list(keys)).items():
+        p = keys[k]
+        p["facts"] = [f for f in p.get("facts", []) if f.get("kind") != "status"] + [
+            {"id": f"status:{st['id']}", "kind": "status", "text": f"{st['name']} wrote on Connections: {st['status']}"}
+        ]
 
 
 def _shortlist(g: Graph, plan: GoalPlan, pool: dict[str, dict], size: int) -> list[str]:
@@ -332,7 +346,8 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
             continue
         need = match_need(s.need, plan)
         web_cited = [{k: f[k] for k in ("id", "text", "url")} for f in person["facts"] if f.get("kind") == "web" and f["id"] in evidence]
-        if web_on and not web_cited:
+        status_cited = any(f.get("kind") == "status" and f["id"] in evidence for f in person["facts"])
+        if web_on and not web_cited and not status_cited:
             # The goal turns on a company fact and no web source backed it: unknown, so it cannot rank high.
             score = min(score, 40)
             if score < settings.relevance_floor:

@@ -161,12 +161,24 @@ def me(v: Viewer = Depends(viewer)):
         "provider": model.provider,
         "voice": model.can_transcribe,
         **users.settings_of(get_store(), v.id),
+        "profile": users.profile_of(get_store(), v.id),
     }
 
 
 class SettingsIn(BaseModel):
     plan: str | None = None
     discoverable: bool | None = None
+
+
+class ProfileIn(BaseModel):
+    status: str | None = None
+    linkedin_url: str | None = None
+
+
+@app.patch("/api/profile")
+def update_profile(body: ProfileIn, v: Viewer = Depends(viewer)):
+    """Your status line and LinkedIn link. Friends (and their friends) see the status where you appear."""
+    return users.update_profile(get_store(), v.id, status=body.status, linkedin_url=body.linkedin_url)
 
 
 @app.patch("/api/settings")
@@ -445,6 +457,7 @@ def get_friends(v: Viewer = Depends(viewer)):
         f["discoverable"] = users.settings_of(store, f["id"])["discoverable"]
         found = one(store.user(f["id"]), "MATCH (:Me)-[:KNOWS]->(p:Person) RETURN count(p) AS n") or {}
         f["contacts"] = found.get("n", 0) if f["discoverable"] else 0
+        f["status"] = users.profile_of(store, f["id"])["status"] if f["discoverable"] else ""
     return out
 
 

@@ -153,6 +153,8 @@ Rules:
   anything about the company: cite their ids, and say what the source says ("their careers page lists remote roles").
   Do not use your own memory about a company when web facts are given for it.
 - If no web facts are given for a company, do not claim anything about it.
+- Facts whose id starts with "status:" are what that person wrote about themselves in the app (for example
+  "Hiring SDE interns"). They are first-hand and current: weigh them heavily and cite them.
 - If the goal depends on something you cannot establish (for example the goal is a remote job and you do not know
   whether the company hires remotely), say it is unknown in the reason and score 40 or below.
 - A fact that contradicts the goal (for example a note that the company is office-only) means a low score, whatever

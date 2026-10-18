@@ -19,6 +19,7 @@ type Hit = {
   paths: Hop[][]
   matched: string[]
   note: string | null
+  status?: string | null
 }
 type Result = {
   query: string
@@ -108,7 +109,7 @@ export function FindView({
     <div className="view">
       <div className="view-head">
         <h1>Find someone</h1>
-        <p className="muted">Search by role, or by anything you noted about someone. People you know come first, then people your friends know. No request needed.</p>
+        <p className="muted">Search by role, by anything you noted about someone, or by what people say they are looking for. People you know come first, then people your friends know. No request needed.</p>
       </div>
 
       <form
@@ -281,6 +282,11 @@ function HitList({ hits, query }: { hits: Hit[]; myName: string; query: string }
               <span className="small muted ellipsis" style={{ display: 'block' }}>
                 <Highlight text={[h.position, h.company].filter(Boolean).join(' at ')} words={h.matched} />
               </span>
+              {h.status && (
+                <span className="hit-status small">
+                  Their status: <Highlight text={h.status} words={noteWords(h.status, query)} />
+                </span>
+              )}
               {h.note && (
                 <span className="hit-note small">
                   Your note: <Highlight text={h.note} words={noteWords(h.note, query)} />

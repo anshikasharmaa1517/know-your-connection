@@ -152,6 +152,58 @@ def _prefilter_terms(phrases: list[str]) -> list[str]:
     return sorted(terms)
 
 
+def _by_profile(g: Graph, keys: list[str]) -> list[dict]:
+    """People in a graph whose LinkedIn profile is one of these normalised keys."""
+    from .users import li_key
+
+    found = rows(
+        g,
+        "MATCH (:Me)-[k:KNOWS]->(p:Person) WHERE p.linkedin_url <> '' AND any(x IN $keys WHERE toLower(p.linkedin_url) CONTAINS x) "
+        f"RETURN {_PROFILE}, k.strength AS strength",
+        {"keys": keys},
+    )
+    return [r for r in found if li_key(r.get("url")) in keys]
+
+
+def _add_statuses(c, store: Store, uid: str, net: dict, own: Graph, friend_graphs, stems: list[str], *, third: bool) -> None:
+    from .users import li_key, statuses_matching
+
+    hits = [u for u in statuses_matching(store, stems) if u["id"] != uid and u["discoverable"] and _note_match(stems, [u["status"]])]
+    if not hits:
+        return
+    friends = {f["id"] for f in net["friends"]}
+    for u in hits:  # a friend's own status: they are someone you know
+        if u["id"] in friends:
+            c.add_status(
+                {"id": None, "name": u["name"], "headline": "Your friend on Connections", "url": u.get("linkedin_url") or "", "key": "user:" + u["id"]},
+                1, [], u["status"],
+            )
+    by_key = {u["li_key"]: u for u in hits if u["li_key"]}
+    if not by_key:
+        return
+    keys = list(by_key)
+    for r in _by_profile(own, keys):
+        c.add_status(r, 1, [], by_key[li_key(r["url"])]["status"], own=True)
+    for f, g in friend_graphs:
+        for r in _by_profile(g, keys):
+            c.add_status(r, 2, [{"name": f["name"], "kind": "friend", "handle": f["handle"]}], by_key[li_key(r["url"])]["status"])
+    if third:
+        for ff in net["fof"]:
+            for r in _by_profile(store.user(ff["id"]), keys):
+                c.add_status(r, 3, [{"name": ff["through"][0], "kind": "friend"}, {"name": ff["name"], "kind": "friend"}], by_key[li_key(r["url"])]["status"])
+
+
+def _attach_statuses(c, store: Store) -> None:
+    """Show the status of anyone found by title too, when they wrote one."""
+    from .users import li_key, statuses_for
+
+    keys = {li_key(r["url"]): r for r in c.found.values() if r.get("url")}
+    for k, st in statuses_for(store, list(keys)).items():
+        keys[k].setdefault("status", st["status"])
+        if not keys[k].get("status"):
+            keys[k]["status"] = st["status"]
+
+
 _PROFILE = (
     "p.id AS id, p.name AS name, p.position AS position, p.company AS company, p.headline AS headline, "
     "p.linkedin_url AS url, p.name_key AS key"
@@ -294,10 +346,32 @@ class _Collector:
                 "note": note,
             }
 
+    def add_status(self, r: dict, degree: int, path: list[dict], status: str, *, own: bool = False):
+        key = _key(r)
+        existing = self.found.get(key)
+        if existing and existing["degree"] <= degree:
+            existing["status"] = status
+            return
+        self.found[key] = {
+            "key": key,
+            "person_id": r.get("id") if own else None,
+            "name": r.get("name") or "",
+            "position": r.get("position") or "",
+            "company": r.get("company") or "",
+            "headline": r.get("headline") or "",
+            "url": r.get("url") or "",
+            "degree": degree,
+            "strength": r.get("strength") if own else None,
+            "paths": [path] if path else [],
+            "matched": [],
+            "note": None,
+            "status": status,
+        }
+
     def by_degree(self, degree: int) -> list[dict]:
         out = [r for r in self.found.values() if r["degree"] == degree]
         out.sort(
-            key=lambda r: (r["note"] is None, r["strength"] != "close", -len(r["paths"]), -len(r["matched"]), r["name"].lower())
+            key=lambda r: (r["note"] is None and not r.get("status"), r["strength"] != "close", -len(r["paths"]), -len(r["matched"]), r["name"].lower())
         )
         return out
 
@@ -356,6 +430,13 @@ def find(store: Store, uid: str, query: str, *, depth: int = 2) -> dict:
             path = [{"name": ff["through"][0], "kind": "friend"}, {"name": ff["name"], "kind": "friend"}]
             c.add(_direct(g, terms), 3, path)
         result["scanned"]["fof"] = len(net["fof"])
+        result["third"]["people"] = c.by_degree(3)
+
+    # Statuses people wrote about themselves ("Hiring SDE interns"), matched to your network by LinkedIn profile.
+    if stems:
+        _add_statuses(c, store, uid, net, own, friend_graphs, stems, third=depth >= 3 and third_allowed)
+    _attach_statuses(c, store)
+    if depth >= 3 and third_allowed:
         result["third"]["people"] = c.by_degree(3)
 
     result["first"] = c.by_degree(1)
@@ -452,8 +533,9 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
     if not candidates:
         return result
 
-    from .goals import attach_web_facts
+    from .goals import attach_statuses, attach_web_facts
 
+    attach_statuses(candidates)  # what people wrote about themselves in the app
     web_on = attach_web_facts(plan, candidates)  # company checks on the web, cached in FalkorDB
     payload = [
         {
@@ -476,7 +558,8 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
         need = match_need(s.need, plan)
         cited = [{"text": f["text"], "url": f["url"]} for f in r.get("facts", []) if f.get("kind") == "web" and f["id"] in s.evidence]
         score = max(0, min(100, int(s.score)))
-        if web_on and not cited:
+        has_status = any(f.get("kind") == "status" and f["id"] in s.evidence for f in r.get("facts", []))
+        if web_on and not cited and not has_status:
             score = min(score, 40)
             if score < floor:
                 continue

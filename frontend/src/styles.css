@@ -2032,3 +2032,12 @@ mark {
   flex-wrap: wrap;
   gap: 4px 10px;
 }
+
+.hit-status {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--keep-soft);
+  color: var(--ink);
+}
