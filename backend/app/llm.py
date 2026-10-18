@@ -163,14 +163,15 @@ Rules:
 - About the person, use only what is in the data: their title, company and the facts listed for them. Never invent
   what they do ("coordinates remote hiring") beyond their title.
 - Facts whose id starts with "web:" are web search results about the person's company. They are the evidence for
-  anything about the company: cite their ids, and say what the source says ("their careers page lists remote roles").
+  anything about the company: cite their ids, and state what they say plainly ("Confluent advertises a remote
+  software engineering internship").
   Do not use your own memory about a company when web facts are given for it.
 - If no web facts are given for a company, do not claim anything about it.
 - Pick the need from the person's own title. A "recruiter" need requires a recruiting, talent or HR title; a "hiring
   manager" need requires a manager title in the relevant team. If no need matches what the person actually does,
   leave them out.
-- Web facts start with [source: site]. Say where a claim comes from ("an Atlassian careers page says...",
-  "a UK visa-sponsor list shows..."). Never call web results "notes": notes are only facts of kind fact or intent.
+- Web facts start with [source: site]. Do not name the site or say "source" in the reason; cite the fact id instead.
+  Never call web results "notes": notes are only facts of kind fact or intent.
   Company sites, careers pages and job boards are good sources; resume-advice sites and blogs are weak, so score
   lower when they are the only source.
 - Copy each person's id and name exactly as given. The reason must be about that person's own title and company.
@@ -191,8 +192,8 @@ reason. The goal may include ABOUT ME and the user's feedback on earlier suggest
 Rules:
 - keep=false if the person's own role does not fit the goal and what ABOUT ME says the user wants, or if the reason
   depends on something the facts do not say.
-- Fix the reason when it overstates: it may only say what the title and facts support, and should name the source
-  of any company claim. No "likely" or "probably".
+- Fix the reason when it overstates: it may only say what the title and facts support. Do not name websites or
+  sources in the reason. No "likely" or "probably".
 - The corrected score should not exceed the proposed score unless the facts are strong and first-hand.
 - Copy each id and name exactly. Return a verdict for every candidate.
 """

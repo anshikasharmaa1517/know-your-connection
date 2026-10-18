@@ -573,11 +573,6 @@ function GapAsk({
           <span className="tiny faint" style={{ display: 'block' }}>
             {pathText(h.paths[0] ?? [])}
           </span>
-          {(h.sources ?? []).slice(0, 1).map((src) => (
-            <a key={src.url} className="tiny" href={src.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
-              Source: {new URL(src.url).hostname.replace(/^www\./, '')}
-            </a>
-          ))}
         </span>
         <span className="hit-actions">
           <Rate compact vote={h.vote} onVote={(v) => rateFriend(h, v)} />
