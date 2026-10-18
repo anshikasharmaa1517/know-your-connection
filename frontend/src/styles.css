@@ -760,7 +760,7 @@ mark {
 
 .tally {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   width: 100%;
 }
@@ -1138,7 +1138,7 @@ mark {
 /* Find ------------------------------------------------------------------- */
 
 .tabs-inner {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .find-form {
@@ -1741,4 +1741,9 @@ mark {
 
 .agent-results .person-row {
   align-items: flex-start;
+}
+
+.friends-head {
+  margin: 0;
+  font-size: 1.15rem;
 }

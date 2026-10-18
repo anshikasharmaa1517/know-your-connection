@@ -418,7 +418,14 @@ class HandleIn(BaseModel):
 
 @app.get("/api/friends")
 def get_friends(v: Viewer = Depends(viewer)):
-    return users.friends(get_store(), v.id)
+    store = get_store()
+    out = users.friends(store, v.id)
+    for f in out["friends"]:
+        # What their agent can search for you: a count and the switch, never names.
+        f["discoverable"] = users.settings_of(store, f["id"])["discoverable"]
+        found = one(store.user(f["id"]), "MATCH (:Me)-[:KNOWS]->(p:Person) RETURN count(p) AS n") or {}
+        f["contacts"] = found.get("n", 0) if f["discoverable"] else 0
+    return out
 
 
 @app.post("/api/friends")

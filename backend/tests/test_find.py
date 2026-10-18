@@ -126,3 +126,15 @@ def test_friends_notes_stay_private(client):
     client.post(f"/api/people/{farhan['person']['id']}/notes", headers=hb, json={"text": "Looking for a cofounder"})
     assert "Farhan" in str(client.get("/api/find?q=cofounder", headers=hb).json()["first"])
     assert "Farhan" not in str(client.get("/api/find?q=cofounder", headers=ha).json())
+
+
+def test_friend_list_shows_searchable_contacts(client):
+    ha, a = signup(client, "Js")
+    hb, b = signup(client, "Bhavya")
+    import_all(client, hb, "b")
+    befriend(client, ha, hb, b)
+    f = client.get("/api/friends", headers=ha).json()["friends"][0]
+    assert f["name"] == "Bhavya" and f["discoverable"] and f["contacts"] == 12
+    client.patch("/api/settings", headers=hb, json={"discoverable": False})
+    f = client.get("/api/friends", headers=ha).json()["friends"][0]
+    assert not f["discoverable"] and f["contacts"] == 0

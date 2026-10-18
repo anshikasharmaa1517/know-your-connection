@@ -99,7 +99,7 @@ const paths: Record<string, ReactNode> = {
       <path d="M15.5 15.5L20 20" />
     </>
   ),
-  ask: (
+  friends: (
     <>
       <circle cx="7" cy="12" r="3" />
       <circle cx="17" cy="6.5" r="3" />

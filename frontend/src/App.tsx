@@ -2,19 +2,20 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, currentAccount, forgetAccount, listAccounts, switchAccount, type User } from './api'
 import { Avatar, Wordmark } from './components/Ring'
 import { Icon, Sheet, ToastProvider } from './components/ui'
-import { Friends } from './components/Friends'
+import { FriendsView } from './views/FriendsView'
 import { FindView } from './views/Find'
 import { GoalsView } from './views/Goals'
 import { ImportView } from './views/Import'
 import { OptInPage } from './views/OptIn'
 import { SignIn } from './views/SignIn'
 
-export type Tab = 'import' | 'goals' | 'find'
+export type Tab = 'import' | 'goals' | 'find' | 'friends'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'import', label: 'Import' },
   { id: 'goals', label: 'Goals' },
   { id: 'find', label: 'Find' },
+  { id: 'friends', label: 'Friends' },
 ]
 
 function tabFromHash(): Tab {
@@ -42,10 +43,10 @@ function Shell() {
   }, [])
 
   useEffect(() => {
-    const open = () => setAccountsOpen(true)
+    const open = () => go('friends')
     window.addEventListener('connections:friends', open)
     return () => window.removeEventListener('connections:friends', open)
-  }, [])
+  }, [go])
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash())
@@ -93,12 +94,12 @@ function Shell() {
         <button className="account-button" onClick={() => setAccountsOpen(true)} aria-label={`Signed in as ${me.user.name}. Switch account`}>
           <Avatar name={me.user.name} size={28} />
           {me.user.name.split(' ')[0]}
-          {badge > 0 && <span className="tab-badge account-badge">{badge}</span>}
         </button>
       </header>
 
       <main key={account.user.id}>
         {tab === 'import' && <ImportView go={go} />}
+        {tab === 'friends' && <FriendsView handle={me.user.handle} onBadge={setBadge} />}
         {tab === 'find' && <FindView go={go} myName={me.user.name} plan={me.plan} onPlan={(plan) => setMe({ ...me, plan })} />}
         {tab === 'goals' && <GoalsView go={go} myName={me.user.name} />}
       </main>
@@ -109,6 +110,7 @@ function Shell() {
             <button key={t.id} className="tab" aria-current={tab === t.id ? 'page' : undefined} onClick={() => go(t.id)}>
               <Icon name={t.id} />
               {t.label}
+              {t.id === 'friends' && badge > 0 && <span className="tab-badge">{badge}</span>}
             </button>
           ))}
         </div>
@@ -144,7 +146,6 @@ function Shell() {
           <button className="btn btn-quiet" onClick={() => setAdding(true)}>
             Add another account
           </button>
-          <Friends handle={me.user.handle} onChange={setBadge} />
           <div className="section-title">Search</div>
           <label className="toggle-row">
             <input
