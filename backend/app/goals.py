@@ -36,10 +36,22 @@ class GoalError(ValueError):
     pass
 
 
+def with_company_question(plan: GoalPlan, text: str) -> GoalPlan:
+    """Some goals always turn on a company fact, whatever the planner said."""
+    if not (plan.company_question or "").strip():
+        t = text.lower()
+        if re.search(r"\bremote\b", t):
+            plan.company_question = "remote internships" if re.search(r"\bintern", t) else "remote work policy"
+        elif re.search(r"\bvisa\b|sponsor", t):
+            plan.company_question = "visa sponsorship"
+    return plan
+
+
 def _plan_from(goal: dict) -> GoalPlan:
-    return GoalPlan.model_validate(
+    plan = GoalPlan.model_validate(
         {"summary": goal.get("summary") or goal["text"], "needs": json.loads(goal["needs"]), "company_question": goal.get("company_question")}
     )
+    return with_company_question(plan, goal.get("text") or "")
 
 
 def _keywords(plan: GoalPlan) -> list[str]:
@@ -53,7 +65,10 @@ def create_goal(g: Graph, text: str) -> dict:
     text = (text or "").strip()
     if not text:
         raise GoalError("goal is empty")
-    plan = get_model().plan_goal(text)
+    same = one(g, "MATCH (goal:Goal {status:'open'}) WHERE toLower(goal.text) = toLower($t) RETURN goal.id AS id", {"t": text})
+    if same:  # the same goal again: open the one you already have
+        return get_goal(g, same["id"])
+    plan = with_company_question(get_model().plan_goal(text), text)
     gid = new_id()
     run(
         g,
@@ -77,7 +92,7 @@ def update_goal(g: Graph, gid: str, text: str) -> dict:
     goal = _goal(g, gid)
     if goal["status"] != "open":
         raise GoalError("goal is closed")
-    plan = get_model().plan_goal(text)
+    plan = with_company_question(get_model().plan_goal(text), text)
     run(
         g,
         "MATCH (goal:Goal {id:$id}) SET goal.text = $text, goal.summary = $summary, goal.needs = $needs, "
@@ -346,8 +361,8 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
             continue
         need = match_need(s.need, plan)
         web_cited = [{k: f[k] for k in ("id", "text", "url")} for f in person["facts"] if f.get("kind") == "web" and f["id"] in evidence]
-        status_cited = any(f.get("kind") == "status" and f["id"] in evidence for f in person["facts"])
-        if web_on and not web_cited and not status_cited:
+        backed = any(e != "profile" for e in evidence)  # a web source, their status, or your note
+        if (plan.company_question or "").strip() and not backed:
             # The goal turns on a company fact and no web source backed it: unknown, so it cannot rank high.
             score = min(score, 40)
             if score < settings.relevance_floor:

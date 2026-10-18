@@ -44,7 +44,7 @@ def test_no_false_gap_when_someone_fits(client):
     try:
         h, _ = signup(client, "Js")
         import_all(client, h, "a")
-        goal = client.post("/api/goals", headers=h, json={"text": "remote job"}).json()
+        goal = client.post("/api/goals", headers=h, json={"text": "find a new job"}).json()
         assert goal["ranking"], goal
         needs_with_gaps = {g["need"] for g in goal["gaps"]}
         # Tanvi (Technical Recruiter) and Pooja (Head of Talent) plainly cover the HR need.
@@ -113,3 +113,47 @@ def test_head_phrase_skips_filler():
 
     assert head_phrase("SDE role at a product startup") == "sde"
     assert head_phrase("backend engineer job") == "backend engineer"
+
+
+def test_mixed_up_reasons_are_not_pinned_on_the_wrong_person():
+    """The model echoes names; a reason whose name does not match goes to the right person or is dropped."""
+    from app.llm import HostedModel, Score, Scores, same_person
+
+    assert same_person("Kathi Prakash", "Kathi Banu Prakash")
+    assert not same_person("Kathi Banu Prakash", "Anirudh Pabbaraju")
+
+    class Mixed(HostedModel):
+        name = "mixed"
+        provider = "test"
+
+        def __init__(self):
+            self.fallback = HeuristicModel()
+
+        def _parse(self, instructions, payload, schema):
+            # p1 is Kathi, p2 is Ravi: the model swaps the reasons but names who it meant.
+            return Scores(scores=[
+                Score(person_id="p1", name="Ravi Campus", score=80, need="x", reason="Campus Recruiter at Intuit", evidence=["profile"]),
+                Score(person_id="p2", name="Nobody Known", score=70, need="x", reason="made up", evidence=["profile"]),
+            ])
+
+    people = [
+        {"id": "a1", "name": "Kathi Banu Prakash", "headline": "Talent at AVEVA", "tie": "direct", "strength": None, "facts": []},
+        {"id": "b2", "name": "Ravi Campus", "headline": "Campus Recruiter at Intuit", "tie": "direct", "strength": None, "facts": []},
+    ]
+    out = Mixed().score_people("job", PLAN, people).scores
+    assert [(s.person_id, s.reason) for s in out] == [("b2", "Campus Recruiter at Intuit")]
+
+
+def test_remote_goal_needs_evidence_and_same_goal_is_not_duplicated(client):
+    llm.set_model(OneNeedModel())
+    try:
+        h, _ = signup(client, "Js")
+        import_all(client, h, "a")
+        goal = client.post("/api/goals", headers=h, json={"text": "I want a remote internship"}).json()
+        # No web source, status or note says these companies hire remotely: nobody can rank strong.
+        assert goal["ranking"] and all(r["score"] <= 40 for r in goal["ranking"])
+        again = client.post("/api/goals", headers=h, json={"text": "i want a remote internship"}).json()
+        assert again["goal"]["id"] == goal["goal"]["id"]
+        assert len([g for g in client.get("/api/goals", headers=h).json()["goals"] if g["goal"]["status"] == "open"]) == 1
+    finally:
+        llm.set_model(None)

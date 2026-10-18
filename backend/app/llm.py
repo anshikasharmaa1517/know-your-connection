@@ -91,6 +91,7 @@ class GoalPlan(BaseModel):
 
 class Score(BaseModel):
     person_id: str
+    name: str | None = Field(default=None, description="The person's name, copied exactly from the input.")
     score: int = Field(description="0-100 fit to the goal. Not a judgement of the person.")
     need: str = Field(description="label of the need this person serves best.")
     reason: str = Field(description="One sentence citing the concrete detail that makes them relevant.")
@@ -153,6 +154,9 @@ Rules:
   anything about the company: cite their ids, and say what the source says ("their careers page lists remote roles").
   Do not use your own memory about a company when web facts are given for it.
 - If no web facts are given for a company, do not claim anything about it.
+- Copy each person's id and name exactly as given. The reason must be about that person's own title and company.
+- No speculation. Do not write "likely", "probably", "may", "presumably" or "could be". If something is not in the
+  data, it is unknown.
 - Facts whose id starts with "status:" are what that person wrote about themselves in the app (for example
   "Hiring SDE interns"). They are first-hand and current: weigh them heavily and cite them.
 - If the goal depends on something you cannot establish (for example the goal is a remote job and you do not know
@@ -236,6 +240,15 @@ def expand_keywords(text: str) -> list[str]:
         out.append(tok)
     seen: set[str] = set()
     return [k for k in out if not (k in seen or seen.add(k))][:16]
+
+
+def same_person(a: str, b: str) -> bool:
+    """Loose name match: same words, or same first and last word ("Kathi Banu Prakash" vs "Kathi Prakash")."""
+    wa = re.findall(r"[a-z0-9]+", (a or "").lower())
+    wb = re.findall(r"[a-z0-9]+", (b or "").lower())
+    if not wa or not wb:
+        return False
+    return wa == wb or (wa[0] == wb[0] and wa[-1] == wb[-1])
 
 
 def keyword_hits(keywords: list[str], text: str) -> list[str]:
@@ -547,15 +560,28 @@ class HostedModel:
         chunks = [people[i : i + 20] for i in range(0, len(people), 20)]
 
         def score(chunk: list[dict]) -> list[Score]:
+            # Short ids (p1, p2...) plus the name echoed back: long random ids get mixed up, and a reason
+            # landing on the wrong person is worse than no reason.
+            short = {f"p{i + 1}": p for i, p in enumerate(chunk)}
             payload = json.dumps(
-                {"goal": goal, "needs": [n.model_dump() for n in plan.needs], "people": chunk},
+                {"goal": goal, "needs": [n.model_dump() for n in plan.needs], "people": [{**p, "id": k} for k, p in short.items()]},
                 ensure_ascii=False,
             )
             try:
-                return self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores
+                raw = self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores
             except Exception as exc:
                 log.warning("score_people chunk fell back to heuristics: %s: %s", type(exc).__name__, exc)
                 return self.fallback.score_people(goal, plan, chunk).scores
+            out: list[Score] = []
+            for sc in raw:
+                person = short.get(sc.person_id.strip()) or next((p for p in chunk if p["id"] == sc.person_id), None)
+                if sc.name and person and not same_person(sc.name, person["name"]):
+                    person = next((p for p in chunk if same_person(sc.name, p["name"])), None)
+                if person is None:
+                    log.warning("dropped a score that matched no one: %r", sc.name or sc.person_id)
+                    continue
+                out.append(sc.model_copy(update={"person_id": person["id"], "name": person["name"]}))
+            return out
 
         if len(chunks) <= 1:
             return Scores(scores=[s for c in chunks for s in score(c)])

@@ -558,8 +558,8 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
         need = match_need(s.need, plan)
         cited = [{"text": f["text"], "url": f["url"]} for f in r.get("facts", []) if f.get("kind") == "web" and f["id"] in s.evidence]
         score = max(0, min(100, int(s.score)))
-        has_status = any(f.get("kind") == "status" and f["id"] in s.evidence for f in r.get("facts", []))
-        if web_on and not cited and not has_status:
+        backed = any(f["id"] in s.evidence for f in r.get("facts", []))
+        if (plan.company_question or "").strip() and not backed:
             score = min(score, 40)
             if score < floor:
                 continue
