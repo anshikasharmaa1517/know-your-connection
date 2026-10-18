@@ -523,19 +523,27 @@ class HostedModel:
             return self.fallback.expand_role(query)
 
     def score_people(self, goal: str, plan: GoalPlan, people: list[dict]) -> Scores:
-        out: list[Score] = []
-        for start in range(0, len(people), 20):
-            chunk = people[start : start + 20]
+        chunks = [people[i : i + 20] for i in range(0, len(people), 20)]
+
+        def score(chunk: list[dict]) -> list[Score]:
             payload = json.dumps(
                 {"goal": goal, "needs": [n.model_dump() for n in plan.needs], "people": chunk},
                 ensure_ascii=False,
             )
             try:
-                out.extend(self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores)
+                return self._parse(SCORE_INSTRUCTIONS, payload, Scores).scores
             except Exception as exc:
                 log.warning("score_people chunk fell back to heuristics: %s: %s", type(exc).__name__, exc)
-                out.extend(self.fallback.score_people(goal, plan, chunk).scores)
-        return Scores(scores=out)
+                return self.fallback.score_people(goal, plan, chunk).scores
+
+        if len(chunks) <= 1:
+            return Scores(scores=[s for c in chunks for s in score(c)])
+        # Chunks are independent model calls: send them at the same time instead of one after another.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as pool:
+            results = list(pool.map(score, chunks))
+        return Scores(scores=[s for r in results for s in r])
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:  # pragma: no cover
         return None

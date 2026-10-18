@@ -321,25 +321,28 @@ def rank(g: Graph, gid: str) -> dict:
     pool, shortlist, ordered, model_name = score_against(g, plan, goal["text"])
 
     _clear_ranking(g, gid)
-    for position, (pid, r) in enumerate(ordered, start=1):
-        person = pool[pid]
+    # One write for the whole ranking: FalkorDB may be far from the app server, so round trips add up.
+    batch = [
+        {
+            "pid": pid,
+            "score": r["score"],
+            "reason": r["reason"],
+            "need": r["need"],
+            "evidence": r["evidence"],
+            "rank": position,
+            "via_id": pool[pid].get("via_id") or "",
+            "via_name": pool[pid].get("via_name") or "",
+            "tie": pool[pid]["tie"],
+        }
+        for position, (pid, r) in enumerate(ordered, start=1)
+    ]
+    if batch:
         run(
             g,
-            "MATCH (p:Person {id:$pid}), (goal:Goal {id:$gid}) "
-            "CREATE (p)-[:RELEVANT_TO {score:$score, reason:$reason, need:$need, evidence:$evidence, "
-            "rank:$rank, via_id:$via_id, via_name:$via_name, tie:$tie}]->(goal)",
-            {
-                "pid": pid,
-                "gid": gid,
-                "score": r["score"],
-                "reason": r["reason"],
-                "need": r["need"],
-                "evidence": r["evidence"],
-                "rank": position,
-                "via_id": person.get("via_id") or "",
-                "via_name": person.get("via_name") or "",
-                "tie": person["tie"],
-            },
+            "MATCH (goal:Goal {id:$gid}) UNWIND $rows AS row MATCH (p:Person {id:row.pid}) "
+            "CREATE (p)-[:RELEVANT_TO {score:row.score, reason:row.reason, need:row.need, evidence:row.evidence, "
+            "rank:row.rank, via_id:row.via_id, via_name:row.via_name, tie:row.tie}]->(goal)",
+            {"gid": gid, "rows": batch},
         )
 
     gaps = []
