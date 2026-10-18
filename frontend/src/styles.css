@@ -1807,3 +1807,14 @@ mark {
 .scan-word {
   text-align: left;
 }
+
+.scan-fixed,
+.scan-word {
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.scan-word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
