@@ -139,12 +139,15 @@ Rules:
 - The reason is one sentence and must cite the concrete detail (company, role, what they said).
 - People reached 'via' someone are second-degree: still list them if they fit, the via is the warm path.
 - Leave out anyone with no real connection to the goal (score below 30). An empty list is fine.
-- Use only what is in the data: the person's title, company and the facts listed for them. Never state or assume
-  anything about a company that the data does not say (whether it hires remotely, is remote-first, is hiring, its size
-  or sector). Do not write phrases like "a known remote-first company" unless a fact says so.
-- If the goal depends on something the data does not show (for example the goal is a remote job and nothing says the
-  company hires remotely), say in the reason that it is unknown, and keep the score at 60 or below.
-- A fact that contradicts the goal (for example a note that the company is office-only) means a low score.
+- About the person, use only what is in the data: their title, company and the facts listed for them. Never invent
+  what they do ("coordinates remote hiring") beyond their title.
+- About the company, you may use well-established public knowledge you are confident about, such as a company's
+  widely reported remote-first or remote-friendly policy. Say so in the reason ("publicly known as remote-friendly").
+  Do not guess: if you are not confident, treat it as unknown.
+- If the goal depends on something you cannot establish (for example the goal is a remote job and you do not know
+  whether the company hires remotely), say it is unknown in the reason and score 40 or below.
+- A fact that contradicts the goal (for example a note that the company is office-only) means a low score, whatever
+  you believe about the company.
 """
 
 ROLE_INSTRUCTIONS = """You expand a short people search, typed by someone looking through their network, into job-title phrases.

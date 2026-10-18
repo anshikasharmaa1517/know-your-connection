@@ -8,6 +8,8 @@ import type { Tab } from '../App'
 import { openFriends } from '../components/Friends'
 import { pathText, Scan, type Hop } from './Find'
 
+const STRONG = 50
+
 type GoalRow = { goal: { id: string; text: string; status: string; created_at: number }; people: number; gaps: number }
 
 type Receipt = { kind: string; text: string; source?: string; source_kind?: string; at?: number }
@@ -39,7 +41,12 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
   const [showPast, setShowPast] = useState(false)
   const [view, setView] = useState<'list' | 'map'>('list')
   const [askSignal, setAskSignal] = useState(0)
-  const rankPage = usePage(detail?.ranking ?? [])
+  // Strong matches first; weaker ones (often "unknown if remote") wait behind a button.
+  const [showWeak, setShowWeak] = useState(false)
+  const ranking = detail?.ranking ?? []
+  const strong = ranking.filter((r) => r.score >= STRONG)
+  const weakCount = ranking.length - strong.length
+  const rankPage = usePage(showWeak || strong.length === 0 ? ranking : strong)
   // Friends' agent results per goal, shared by the gap cards and the map.
   const [agents, setAgents] = useState<Record<string, AgentRun>>({})
   const saveAgents = useCallback((gid: string, r: AgentRun) => setAgents((a) => ({ ...a, [gid]: r })), [])
@@ -266,7 +273,9 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
               <span className="small muted">
                 {detail.ranking.length === 0
                   ? 'No one you know fits yet'
-                  : `${detail.ranking.length} ${detail.ranking.length === 1 ? 'person fits' : 'people fit'} this goal`}
+                  : strong.length
+                    ? `${strong.length} strong ${strong.length === 1 ? 'fit' : 'fits'}${weakCount ? `, ${weakCount} weaker` : ''}`
+                    : `${ranking.length} possible ${ranking.length === 1 ? 'fit' : 'fits'}, none strong yet`}
               </span>
               {detail.ranking.length > 0 && (
                 <div className="segmented" role="tablist" aria-label="View">
@@ -341,6 +350,13 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                   ))}
                 </ol>
                 <Pager {...rankPage} />
+                {strong.length > 0 && weakCount > 0 && (
+                  <div className="row" style={{ justifyContent: 'center', paddingBottom: 8 }}>
+                    <button className="btn btn-ghost btn-small" onClick={() => setShowWeak(!showWeak)}>
+                      {showWeak ? 'Hide weaker matches' : `Show ${weakCount} weaker ${weakCount === 1 ? 'match' : 'matches'}`}
+                    </button>
+                  </div>
+                )}
                 </>
               )}
             </div>
