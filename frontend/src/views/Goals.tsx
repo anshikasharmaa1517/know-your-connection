@@ -12,7 +12,7 @@ const STRONG = 50
 
 type GoalRow = { goal: { id: string; text: string; status: string; created_at: number }; people: number; gaps: number }
 
-type Receipt = { kind: string; text: string; source?: string; source_kind?: string; at?: number }
+type Receipt = { kind: string; text: string; source?: string; source_kind?: string; at?: number; url?: string }
 type Ranked = {
   person: { id: string; name: string; headline: string }
   score: number
@@ -339,7 +339,17 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                             <div className="receipt" key={i}>
                               {rc.text}
                               <div className="receipt-src">
-                                {rc.source_kind === 'linkedin' ? 'LinkedIn export' : rc.source_kind === 'memo' ? `Memo: ${rc.source}` : rc.source}
+                                {rc.source_kind === 'web' && rc.url ? (
+                                  <a href={rc.url} target="_blank" rel="noreferrer">
+                                    Web: {rc.source}
+                                  </a>
+                                ) : rc.source_kind === 'linkedin' ? (
+                                  'LinkedIn export'
+                                ) : rc.source_kind === 'memo' ? (
+                                  `Memo: ${rc.source}`
+                                ) : (
+                                  rc.source
+                                )}
                                 {rc.at ? `, ${formatDate(rc.at)}` : ''}
                               </div>
                             </div>
@@ -403,6 +413,7 @@ type AgentHit = {
   reason: string
   need: string
   for_gap: boolean
+  sources?: { text: string; url: string }[]
 }
 type AgentResult = {
   need: string
@@ -528,6 +539,11 @@ function GapAsk({
           <span className="tiny faint" style={{ display: 'block' }}>
             {pathText(h.paths[0] ?? [])}
           </span>
+          {(h.sources ?? []).slice(0, 1).map((src) => (
+            <a key={src.url} className="tiny" href={src.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+              Source: {new URL(src.url).hostname.replace(/^www\./, '')}
+            </a>
+          ))}
         </span>
         <span className="hit-actions">
           <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />

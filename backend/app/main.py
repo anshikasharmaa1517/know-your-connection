@@ -13,6 +13,7 @@ from . import goals as goals_mod
 from . import imports as imports_mod
 from . import network, users
 from . import search as search_mod
+from . import web as web_mod
 from .auth import Viewer, graph_of, viewer
 from .config import apply_env_aliases, describe_falkordb_url, get_settings, related_env_names
 from .db import get_store, one
@@ -73,6 +74,7 @@ def health():
         "model": model.name,
         "llm": settings.llm_enabled,
         "voice": model.can_transcribe,
+        "web_search": web_mod.provider(),
     }
 
 

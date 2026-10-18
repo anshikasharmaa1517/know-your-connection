@@ -452,8 +452,18 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
     if not candidates:
         return result
 
+    from .goals import attach_web_facts
+
+    web_on = attach_web_facts(plan, candidates)  # company checks on the web, cached in FalkorDB
     payload = [
-        {"id": r["key"], "name": r["name"], "headline": r["headline"] or ", ".join(filter(None, [r["position"], r["company"]])), "tie": "friend", "strength": None, "facts": []}
+        {
+            "id": r["key"],
+            "name": r["name"],
+            "headline": r["headline"] or ", ".join(filter(None, [r["position"], r["company"]])),
+            "tie": "friend",
+            "strength": None,
+            "facts": [{"id": f["id"], "kind": f["kind"], "text": f["text"]} for f in r.get("facts", [])],
+        }
         for r in candidates
     ]
     scores = {s.person_id: s for s in get_model().score_people(goal, scoring, payload).scores}
@@ -464,8 +474,15 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
         if not s or s.score < floor:
             continue
         need = match_need(s.need, plan)
+        cited = [{"text": f["text"], "url": f["url"]} for f in r.get("facts", []) if f.get("kind") == "web" and f["id"] in s.evidence]
+        score = max(0, min(100, int(s.score)))
+        if web_on and not cited:
+            score = min(score, 40)
+            if score < floor:
+                continue
         for_gap = bool(gap) and (need.lower() == gap.label.lower() or covers(gap, {"headline": r["headline"], "position": r["position"]}, s.reason))
-        people.append({**r, "score": max(0, min(100, int(s.score))), "reason": s.reason.strip(), "need": need, "for_gap": for_gap})
+        row = {k: v for k, v in r.items() if k != "facts"}
+        people.append({**row, "score": score, "reason": s.reason.strip(), "need": need, "for_gap": for_gap, "sources": cited})
     people.sort(key=lambda r: (not r["for_gap"], r["degree"], -r["score"]))
     result["people"] = people
     return result

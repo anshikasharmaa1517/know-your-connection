@@ -49,6 +49,7 @@ SHARED_INDEXES = [
     "CREATE INDEX FOR (n:Reply) ON (n.id)",
     "CREATE INDEX FOR (n:Card) ON (n.id)",
     "CREATE INDEX FOR (n:Card) ON (n.optin_token)",
+    "CREATE INDEX FOR (n:WebCheck) ON (n.key)",
 ]
 
 

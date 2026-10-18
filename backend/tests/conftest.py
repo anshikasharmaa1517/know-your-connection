@@ -9,6 +9,8 @@ os.environ["CONNECTIONS_GRAPH_PREFIX"] = "connectionstest"
 os.environ.pop("OPENAI_API_KEY", None)
 # Never call a real model from tests, even if AWS or OpenAI credentials are in the environment.
 os.environ["LLM_PROVIDER"] = "offline"
+# Tests never reach the internet; web checks are tested with a fake search.
+os.environ["CONNECTIONS_WEB_SEARCH"] = "off"
 os.environ["CONNECTIONS_STATIC_DIR"] = "/nonexistent"
 
 from fastapi.testclient import TestClient  # noqa: E402

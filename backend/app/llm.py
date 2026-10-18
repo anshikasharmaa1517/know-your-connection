@@ -81,6 +81,12 @@ class Need(BaseModel):
 class GoalPlan(BaseModel):
     summary: str = Field(description="The goal restated in one short sentence.")
     needs: list[Need] = Field(description="1 to 3 distinct kinds of people who can directly open the door for this goal.")
+    company_question: str | None = Field(
+        default=None,
+        description="If whether someone helps depends on a fact about their company that public web pages answer "
+        "(for example whether it hires remotely), a short web search phrase to put after the company name, "
+        "like 'remote work policy'. Otherwise null.",
+    )
 
 
 class Score(BaseModel):
@@ -129,7 +135,9 @@ exactly what the goal describes and can vouch for them. For a job goal that mean
 working in that kind of role or company.
 Do not add supporting or advisory roles (career coaches, consultants, resume writers, mentors, trainers) unless the goal
 itself asks for advice, coaching or mentorship. Fewer, sharper needs are better than padding.
-Keywords should be words that would literally appear in a LinkedIn job title, company name or a note about such a person."""
+Keywords should be words that would literally appear in a LinkedIn job title, company name or a note about such a person.
+Set company_question when the goal depends on something about the person's company that a web search can answer
+(remote job: "remote work policy"; visa sponsorship: "visa sponsorship"); otherwise leave it null."""
 
 SCORE_INSTRUCTIONS = """You rank people from the user's own network against one goal.
 
@@ -141,9 +149,10 @@ Rules:
 - Leave out anyone with no real connection to the goal (score below 30). An empty list is fine.
 - About the person, use only what is in the data: their title, company and the facts listed for them. Never invent
   what they do ("coordinates remote hiring") beyond their title.
-- About the company, you may use well-established public knowledge you are confident about, such as a company's
-  widely reported remote-first or remote-friendly policy. Say so in the reason ("publicly known as remote-friendly").
-  Do not guess: if you are not confident, treat it as unknown.
+- Facts whose id starts with "web:" are web search results about the person's company. They are the evidence for
+  anything about the company: cite their ids, and say what the source says ("their careers page lists remote roles").
+  Do not use your own memory about a company when web facts are given for it.
+- If no web facts are given for a company, do not claim anything about it.
 - If the goal depends on something you cannot establish (for example the goal is a remote job and you do not know
   whether the company hires remotely), say it is unknown in the reason and score 40 or below.
 - A fact that contradicts the goal (for example a note that the company is office-only) means a low score, whatever
@@ -363,6 +372,7 @@ class HeuristicModel:
     def plan_goal(self, text: str) -> GoalPlan:
         label = re.sub(r"\s+", " ", text.strip()).rstrip(".")
         return GoalPlan(
+            company_question="remote work policy" if re.search(r"\bremote\b", text, re.I) else None,
             summary=label,
             needs=[Need(label=label, description=f"People who can help with: {label}", keywords=expand_keywords(text))],
         )

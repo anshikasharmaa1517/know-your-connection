@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlparse
 
 from falkordb import Graph
 
 from .config import get_settings
-from .db import one, rows, run
+from . import web
+from .db import get_store, one, rows, run
 from .llm import GoalPlan, keyword_hits, get_model
 from .network import refresh_embeddings
 from .util import new_id, now_ms
@@ -35,7 +37,9 @@ class GoalError(ValueError):
 
 
 def _plan_from(goal: dict) -> GoalPlan:
-    return GoalPlan.model_validate({"summary": goal.get("summary") or goal["text"], "needs": json.loads(goal["needs"])})
+    return GoalPlan.model_validate(
+        {"summary": goal.get("summary") or goal["text"], "needs": json.loads(goal["needs"]), "company_question": goal.get("company_question")}
+    )
 
 
 def _keywords(plan: GoalPlan) -> list[str]:
@@ -53,7 +57,7 @@ def create_goal(g: Graph, text: str) -> dict:
     gid = new_id()
     run(
         g,
-        "CREATE (:Goal {id:$id, text:$text, summary:$summary, needs:$needs, keywords:$kw, status:'open', "
+        "CREATE (:Goal {id:$id, text:$text, summary:$summary, needs:$needs, keywords:$kw, company_question:$cq, status:'open', "
         "created_at:$now, updated_at:$now})",
         {
             "id": gid,
@@ -61,6 +65,7 @@ def create_goal(g: Graph, text: str) -> dict:
             "summary": plan.summary,
             "needs": json.dumps([n.model_dump() for n in plan.needs]),
             "kw": _keywords(plan),
+            "cq": plan.company_question,
             "now": now_ms(),
         },
     )
@@ -76,13 +81,14 @@ def update_goal(g: Graph, gid: str, text: str) -> dict:
     run(
         g,
         "MATCH (goal:Goal {id:$id}) SET goal.text = $text, goal.summary = $summary, goal.needs = $needs, "
-        "goal.keywords = $kw, goal.updated_at = $now",
+        "goal.keywords = $kw, goal.company_question = $cq, goal.updated_at = $now",
         {
             "id": gid,
             "text": text.strip(),
             "summary": plan.summary,
             "needs": json.dumps([n.model_dump() for n in plan.needs]),
             "kw": _keywords(plan),
+            "cq": plan.company_question,
             "now": now_ms(),
         },
     )
@@ -273,6 +279,22 @@ def open_gaps(plan: GoalPlan, ranking: list[dict], gaps: list[dict]) -> list[dic
     return out
 
 
+def attach_web_facts(plan: GoalPlan, people: list[dict]) -> bool:
+    """Search the web once per company for the goal's company question and add the results to each
+    person's facts as kind 'web'. Returns True when web evidence is in play (some company had results)."""
+    question = (getattr(plan, "company_question", None) or "").strip()
+    if not question or web.provider() == "off":
+        return False
+    found = web.company_facts(get_store(), [p.get("company") or "" for p in people], question)
+    any_found = False
+    for p in people:
+        facts = found.get((p.get("company") or "").strip(), [])
+        if facts:
+            any_found = True
+        p["facts"] = [f for f in p.get("facts", []) if f.get("kind") != "web"] + [{**f, "kind": "web"} for f in facts]
+    return any_found
+
+
 def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False):
     """Score people in this graph against a plan. Returns (pool, shortlist, ordered, model_name)
     where ordered is [(person_id, {score, reason, need, evidence})] best first."""
@@ -281,6 +303,7 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
     if direct_only:
         pool = {k: v for k, v in pool.items() if v["tie"] == "direct"}
     shortlist = _shortlist(g, plan, pool, settings.rank_pool)
+    web_on = attach_web_facts(plan, [pool[pid] for pid in shortlist])
     payload = [
         {
             "id": pid,
@@ -308,8 +331,14 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
         if not evidence or score < settings.relevance_floor:
             continue
         need = match_need(s.need, plan)
+        web_cited = [{k: f[k] for k in ("id", "text", "url")} for f in person["facts"] if f.get("kind") == "web" and f["id"] in evidence]
+        if web_on and not web_cited:
+            # The goal turns on a company fact and no web source backed it: unknown, so it cannot rank high.
+            score = min(score, 40)
+            if score < settings.relevance_floor:
+                continue
         if s.person_id not in kept or kept[s.person_id]["score"] < score:
-            kept[s.person_id] = {"score": score, "reason": s.reason.strip(), "need": need, "evidence": evidence}
+            kept[s.person_id] = {"score": score, "reason": s.reason.strip(), "need": need, "evidence": evidence, "web": web_cited}
     ordered = sorted(kept.items(), key=lambda kv: kv[1]["score"], reverse=True)
     return pool, shortlist, ordered, model.name
 
@@ -333,6 +362,7 @@ def rank(g: Graph, gid: str) -> dict:
             "via_id": pool[pid].get("via_id") or "",
             "via_name": pool[pid].get("via_name") or "",
             "tie": pool[pid]["tie"],
+            "web": json.dumps(r.get("web") or [], ensure_ascii=False),
         }
         for position, (pid, r) in enumerate(ordered, start=1)
     ]
@@ -341,7 +371,7 @@ def rank(g: Graph, gid: str) -> dict:
             g,
             "MATCH (goal:Goal {id:$gid}) UNWIND $rows AS row MATCH (p:Person {id:row.pid}) "
             "CREATE (p)-[:RELEVANT_TO {score:row.score, reason:row.reason, need:row.need, evidence:row.evidence, "
-            "rank:row.rank, via_id:row.via_id, via_name:row.via_name, tie:row.tie}]->(goal)",
+            "rank:row.rank, via_id:row.via_id, via_name:row.via_name, tie:row.tie, web:row.web}]->(goal)",
             {"gid": gid, "rows": batch},
         )
 
@@ -392,7 +422,7 @@ def get_goal(g: Graph, gid: str) -> dict:
         "MATCH (p:Person)-[r:RELEVANT_TO]->(:Goal {id:$id}) "
         "OPTIONAL MATCH (:Me)-[k:KNOWS]->(p) "
         "RETURN p {.id, .name, .headline, .company, .linkedin_url} AS person, r.score AS score, r.reason AS reason, "
-        "r.need AS need, r.evidence AS evidence, r.tie AS tie, r.via_id AS via_id, r.via_name AS via_name, "
+        "r.need AS need, r.evidence AS evidence, r.web AS web, r.tie AS tie, r.via_id AS via_id, r.via_name AS via_name, "
         "k.strength AS strength ORDER BY r.rank",
         {"id": gid},
     )
@@ -421,7 +451,12 @@ def get_goal(g: Graph, gid: str) -> dict:
     }
     for r in ranking:
         receipts = []
+        web_facts = {w["id"]: w for w in _load_agents(r.pop("web", None)) or []}
         for e in r.pop("evidence") or []:
+            if e in web_facts:
+                w = web_facts[e]
+                receipts.append({"kind": "web", "text": w["text"], "url": w["url"], "source": urlparse(w["url"]).netloc.removeprefix("www."), "source_kind": "web"})
+                continue
             if e == "profile":
                 src = profile_sources.get(r["person"]["id"], {})
                 receipts.append(
