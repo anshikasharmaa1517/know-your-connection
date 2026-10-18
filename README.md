@@ -141,11 +141,11 @@ Before recording: open the live app once so it is awake, and make sure the two d
 
 1. **Import.** Upload your LinkedIn `Connections.csv` (or choose **Try it with sample connections**) and swipe a few. Nothing is added before the swipe.
 2. **Friends.** Show the friends list and adding a friend by handle.
-3. **Goal.** Add "I want a remote job". Show the kinds of people it plans for, then the ranked list: each person has a score and a one-line reason, backed by a web check on whether their company hires remotely. Open one person's LinkedIn.
+3. **Goal.** With a line in **About you** (profile menu), add "Join an early-stage startup (pre-seed to Series A) as a founding engineer on backend or platform". Show the kinds of people it plans for (founders and CTOs, startup recruiters, seed investors), then the ranked list: each person has a score and a one-line reason. Open one person's LinkedIn.
 4. **Feedback.** Mark a strong match **Good fit** and a weak one **Wrong**. The wrong one disappears and the accuracy line updates. The next **Re-rank** learns from both.
 5. **Ask your network.** Tap it: your friends' agents search their graphs and list the people who fit, with the path to each.
 6. **Map.** Switch to Map, drag a node, and hover a friend's contact to light up the path through your friend.
-7. **Status and Find.** Show **Your status** on Friends ("Hiring remote SDE interns"), then search "hiring" or "SDE" in Find: results come back 1st degree, then 2nd degree, with statuses and your notes highlighted.
+7. **Status and Find.** Show **Your status** on Friends ("Hiring our first backend engineer"), then search "founder" or "hiring" in Find: results come back 1st degree, then 2nd degree, with statuses and your notes highlighted.
 8. Optional: open FalkorDB Browser and show that each account is its own graph.
 
 ## What we say about privacy, and what we don't
