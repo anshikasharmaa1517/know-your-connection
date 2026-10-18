@@ -33,6 +33,7 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
+  const [showPast, setShowPast] = useState(false)
   const toast = useToast()
 
   const loadList = useCallback(async () => {
@@ -115,20 +116,50 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
         </button>
       </form>
 
-      {goals && goals.length > 0 && (
-        <div className="goal-pills" role="group" aria-label="Your goals">
-          {goals.map((g) => (
-            <button
-              key={g.goal.id}
-              className={`goal-pill ${g.goal.status === 'closed' ? 'goal-pill-closed' : ''}`}
-              aria-pressed={selected === g.goal.id}
-              onClick={() => setSelected(g.goal.id)}
-            >
-              {g.goal.text}
-            </button>
-          ))}
-        </div>
-      )}
+      {goals && goals.length > 0 && (() => {
+        const current = goals.filter((g) => g.goal.status !== 'closed')
+        const past = goals.filter((g) => g.goal.status === 'closed')
+        return (
+          <>
+            <div className="goal-bar">
+              {current.length > 0 && (
+                <div className="goal-pills" role="group" aria-label="Your goals">
+                  {current.map((g) => (
+                    <button key={g.goal.id} className="goal-pill" aria-pressed={selected === g.goal.id} onClick={() => setSelected(g.goal.id)}>
+                      {g.goal.text}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {past.length > 0 && (
+                <button className="btn btn-ghost btn-small past-toggle" aria-expanded={showPast} onClick={() => setShowPast(!showPast)}>
+                  {showPast ? 'Hide past goals' : `Past goals (${past.length})`}
+                </button>
+              )}
+            </div>
+            {showPast && past.length > 0 && (
+              <div className="panel past-goals">
+                {past.map((g) => (
+                  <button
+                    key={g.goal.id}
+                    className="person-row"
+                    aria-pressed={selected === g.goal.id}
+                    onClick={() => setSelected(g.goal.id)}
+                  >
+                    <span className="grow">
+                      <span className="person-name">{g.goal.text}</span>
+                      <span className="tiny faint" style={{ display: 'block' }}>
+                        Closed. Set {formatDate(g.goal.created_at)}
+                      </span>
+                    </span>
+                    {selected === g.goal.id && <span className="chip">Viewing</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {detail && (
         <section className="stack" aria-label={detail.goal.text}>
@@ -185,7 +216,21 @@ export function GoalsView({ ask }: { go: (t: Tab) => void; ask: (d: AskDraft) =>
                     </div>
                   </>
                 ) : (
-                  <p className="muted">Closed. Its ranking was cleared.</p>
+                  <div className="stack" style={{ gap: 10 }}>
+                    <p className="muted">Closed. Its ranking was cleared.</p>
+                    <div className="row">
+                      <button
+                        className="btn btn-quiet btn-small"
+                        disabled={busy}
+                        onClick={async () => {
+                          await act('/reopen')
+                          setShowPast(false)
+                        }}
+                      >
+                        {busy ? <Spinner label="Re-ranking" /> : 'Reopen and re-rank'}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </>
             )}

@@ -1690,3 +1690,27 @@ mark {
   border: 0;
   background: var(--focus);
 }
+
+.goal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.goal-bar .goal-pills {
+  flex: 1;
+  min-width: 0;
+}
+
+.past-toggle {
+  flex: none;
+}
+
+.past-goals {
+  padding: 4px 12px;
+}
+
+.past-goals .person-row[aria-pressed='true'] .person-name {
+  text-decoration: underline;
+}

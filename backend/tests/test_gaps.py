@@ -53,3 +53,14 @@ def test_no_false_gap_when_someone_fits(client):
         assert "Hiring manager at a remote company" not in needs_with_gaps
     finally:
         llm.set_model(None)
+
+
+def test_reopen_goal_reranks(client):
+    h, _ = signup(client, "Js")
+    import_all(client, h, "a")
+    g = client.post("/api/goals", headers=h, json={"text": "Summer 2027 VC internship"}).json()
+    gid = g["goal"]["id"]
+    closed = client.post(f"/api/goals/{gid}/close", headers=h).json()
+    assert closed["goal"]["status"] == "closed" and closed["ranking"] == []
+    back = client.post(f"/api/goals/{gid}/reopen", headers=h).json()
+    assert back["goal"]["status"] == "open" and back["ranking"]

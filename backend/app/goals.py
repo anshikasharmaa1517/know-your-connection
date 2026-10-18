@@ -97,6 +97,13 @@ def close_goal(g: Graph, gid: str) -> dict:
     return get_goal(g, gid)
 
 
+def reopen_goal(g: Graph, gid: str) -> dict:
+    _goal(g, gid)
+    run(g, "MATCH (goal:Goal {id:$id}) SET goal.status = 'open', goal.closed_at = NULL", {"id": gid})
+    rank(g, gid)
+    return get_goal(g, gid)
+
+
 def _goal(g: Graph, gid: str) -> dict:
     found = one(g, "MATCH (goal:Goal {id:$id}) RETURN goal AS goal", {"id": gid})
     if not found:

@@ -383,6 +383,11 @@ def close_goal(gid: str, v: Viewer = Depends(viewer)):
     return goals_mod.close_goal(graph_of(v), gid)
 
 
+@app.post("/api/goals/{gid}/reopen")
+def reopen_goal(gid: str, v: Viewer = Depends(viewer)):
+    return goals_mod.reopen_goal(graph_of(v), gid)
+
+
 # --------------------------------------------------------------------------
 # Friends
 
