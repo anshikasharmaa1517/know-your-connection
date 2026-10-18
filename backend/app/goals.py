@@ -19,6 +19,7 @@ Closing a goal deletes its ranking and gaps.
 from __future__ import annotations
 
 import json
+import re
 
 from falkordb import Graph
 
@@ -183,6 +184,41 @@ def _shortlist(g: Graph, plan: GoalPlan, pool: dict[str, dict], size: int) -> li
     return picked[:size]
 
 
+_NEED_SKIP = {"a", "an", "the", "at", "in", "of", "for", "to", "and", "or", "with", "who", "on", "someone", "person"}
+
+
+def _need_words(label: str) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z0-9]+", (label or "").lower()) if w not in _NEED_SKIP}
+
+
+def match_need(label: str, plan: GoalPlan) -> str:
+    """Map the need a model names back to one of the plan's needs, tolerating rewording
+    ("HR leader at a remote-first company" vs "HR leader at remote-first company")."""
+    if not plan.needs:
+        return label
+    if len(plan.needs) == 1:
+        return plan.needs[0].label
+    want = _need_words(label)
+    best, best_overlap = None, 0.0
+    for need in plan.needs:
+        have = _need_words(need.label)
+        if have == want:
+            return need.label
+        if not have or not want:
+            continue
+        overlap = len(have & want) / min(len(have), len(want))
+        if overlap > best_overlap:
+            best, best_overlap = need.label, overlap
+    return best if best and best_overlap >= 0.5 else label
+
+
+def covers(need, person: dict, reason: str) -> bool:
+    """Does this person plainly fit a need, judging by title, the ranking reason and notes?"""
+    text = " ".join([person.get("headline") or "", person.get("company") or "", reason] + [f["text"] for f in person.get("facts", [])])
+    hits = keyword_hits([k.lower() for k in need.keywords], text)
+    return len(hits) >= (1 if len(need.keywords) < 4 else 2)
+
+
 def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False):
     """Score people in this graph against a plan. Returns (pool, shortlist, ordered, model_name)
     where ordered is [(person_id, {score, reason, need, evidence})] best first."""
@@ -205,7 +241,6 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
     model = get_model()
     scores = model.score_people(text, plan, payload).scores if payload else []
 
-    labels = {n.label.lower(): n.label for n in plan.needs}
     kept: dict[str, dict] = {}
     for s in scores:
         person = pool.get(s.person_id)
@@ -218,7 +253,7 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
         score = max(0, min(100, int(s.score)))
         if not evidence or score < settings.relevance_floor:
             continue
-        need = labels.get(s.need.lower(), plan.needs[0].label if len(plan.needs) == 1 else s.need)
+        need = match_need(s.need, plan)
         if s.person_id not in kept or kept[s.person_id]["score"] < score:
             kept[s.person_id] = {"score": score, "reason": s.reason.strip(), "need": need, "evidence": evidence}
     ordered = sorted(kept.items(), key=lambda kv: kv[1]["score"], reverse=True)
@@ -255,7 +290,16 @@ def rank(g: Graph, gid: str) -> dict:
 
     gaps = []
     for need in plan.needs:
-        best = max((r["score"] for _, r in ordered if r["need"].lower() == need.label.lower()), default=0)
+        # A need is covered by anyone ranked for it, or ranked for another need who plainly fits
+        # this one too (one person can serve two needs; the model only names one).
+        best = max(
+            (
+                r["score"]
+                for pid, r in ordered
+                if r["need"].lower() == need.label.lower() or covers(need, pool[pid], r["reason"])
+            ),
+            default=0,
+        )
         if best < settings.gap_threshold:
             gap_id = new_id()
             text = f"No warm path to {need.label}" if best == 0 else f"Only a weak path to {need.label}"
