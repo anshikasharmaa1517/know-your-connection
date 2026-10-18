@@ -244,6 +244,43 @@ def delete_source(g: Graph, sid: str) -> dict:
     return {"deleted": True, "facts": (facts or {}).get("n", 0), "people": len(orphan_ids)}
 
 
+def goal_snapshot(g: Graph, goal_id: str) -> dict:
+    """Nodes and edges for one goal's map: the people ranked for it, plus whoever a
+    second-degree match is reached through. Works on any network size."""
+    fit = [r["id"] for r in rows(g, "MATCH (p:Person)-[:RELEVANT_TO]->(:Goal {id:$gid}) RETURN p.id AS id", {"gid": goal_id})]
+    anchors = [
+        r["id"]
+        for r in rows(
+            g,
+            "UNWIND $ids AS pid MATCH (p:Person {id:pid}) "
+            "OPTIONAL MATCH (m:Me)-[k:KNOWS]->(p) WITH p, k WHERE k IS NULL "
+            "MATCH (p)-[:KNOWS]-(via:Person)<-[:KNOWS]-(:Me) RETURN DISTINCT via.id AS id",
+            {"ids": fit},
+        )
+    ]
+    ids = list(dict.fromkeys(fit + anchors))
+    people = rows(
+        g,
+        "UNWIND $ids AS pid MATCH (p:Person {id:pid}) OPTIONAL MATCH (:Me)-[k:KNOWS]->(p) "
+        "RETURN p.id AS id, p.name AS name, p.headline AS headline, p.company AS company, "
+        "p.position AS position, k.strength AS strength, k IS NOT NULL AS direct, "
+        "size([(p)<-[:ABOUT]-(f:Fact) | f]) AS notes",
+        {"ids": ids},
+    )
+    ties = rows(
+        g,
+        "UNWIND $ids AS pid MATCH (a:Person {id:pid})-[t:KNOWS]->(b:Person) WHERE b.id IN $ids "
+        "RETURN a.id AS a, b.id AS b, t.relation AS relation",
+        {"ids": ids},
+    )
+    relevant = rows(
+        g,
+        "MATCH (p:Person)-[r:RELEVANT_TO]->(goal:Goal {id:$gid}) RETURN p.id AS id, goal.id AS goal_id, r.score AS score",
+        {"gid": goal_id},
+    )
+    return {"people": people, "ties": ties, "relevant": relevant}
+
+
 def snapshot(g: Graph, limit: int = 400) -> dict:
     """Nodes and edges for the network view."""
     people = rows(

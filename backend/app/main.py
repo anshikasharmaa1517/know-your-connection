@@ -287,7 +287,9 @@ def delete_note(pid: str, fid: str, v: Viewer = Depends(viewer)):
 
 
 @app.get("/api/graph")
-def graph_snapshot(v: Viewer = Depends(viewer)):
+def graph_snapshot(goal: str | None = None, v: Viewer = Depends(viewer)):
+    if goal:
+        return network.goal_snapshot(graph_of(v), goal)
     return network.snapshot(graph_of(v))
 
 

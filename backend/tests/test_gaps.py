@@ -88,3 +88,21 @@ def test_stale_gaps_are_hidden_on_read():
     ranking = [{"person": {"headline": "Technical Recruiter at X"}, "score": 80, "reason": "Leads recruiting on the talent team", "need": "something else"}]
     gaps = [{"id": "1", "need": "HR leader at remote-first company"}, {"id": "2", "need": "Hiring manager at a remote company"}]
     assert [g["id"] for g in open_gaps(plan, ranking, gaps)] == ["2"]
+
+
+def test_goal_map_has_everyone_ranked_even_in_big_networks(client, monkeypatch):
+    from app import network
+
+    h, _ = signup(client, "Js")
+    import_all(client, h, "a")
+    g = client.post("/api/goals", headers=h, json={"text": "Summer 2027 VC internship"}).json()
+    ranked = {r["person"]["id"] for r in g["ranking"]}
+    assert ranked
+    # Simulate a network bigger than the full snapshot's limit.
+    real = network.snapshot
+    monkeypatch.setattr(network, "snapshot", lambda graph, limit=400: real(graph, limit=2))
+    full = client.get("/api/graph", headers=h).json()
+    assert len(full["people"]) == 2
+    m = client.get(f"/api/graph?goal={g['goal']['id']}", headers=h).json()
+    assert ranked <= {p["id"] for p in m["people"]}
+    assert {r["id"] for r in m["relevant"]} == ranked

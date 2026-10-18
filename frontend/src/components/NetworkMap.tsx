@@ -96,7 +96,7 @@ export function NetworkMap({ goalId, onOpen }: { goalId: string; onOpen: (id: st
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    api<Snapshot>('/api/graph').then((s) => {
+    api<Snapshot>(`/api/graph?goal=${encodeURIComponent(goalId)}`).then((s) => {
       // Only the people who fit this goal, plus anyone they are reached through.
       const fit = new Set(s.relevant.filter((r) => r.goal_id === goalId).map((r) => r.id))
       const keep = new Set(fit)
