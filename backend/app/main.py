@@ -14,6 +14,7 @@ from . import imports as imports_mod
 from . import network, users
 from . import search as search_mod
 from . import web as web_mod
+from . import smart as smart_mod
 from .auth import Viewer, graph_of, viewer
 from .config import apply_env_aliases, describe_falkordb_url, get_settings, related_env_names
 from .db import get_store, one
@@ -418,7 +419,7 @@ def ask_network(gid: str, gap_id: str, depth: int = 2, v: Viewer = Depends(viewe
     goal = found["goal"]
     result = search_mod.ask_network(
         get_store(), v.id, plan=goals_mod._plan_from(goal), gap_need=found["need"],
-        goal=goal["text"], depth=3 if depth >= 3 else 2,
+        goal=goal["text"], depth=3 if depth >= 3 else 2, goal_id=gid,
     )
     return goals_mod.save_agents(g, gid, result, gap_id=gap_id)
 
@@ -431,8 +432,40 @@ def ask_network_for_goal(gid: str, depth: int = 2, v: Viewer = Depends(viewer)):
     plan = goals_mod._plan_from(goal)
     gap = one(g, "MATCH (:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap) RETURN gap.need AS need LIMIT 1", {"gid": gid})
     need = gap["need"] if gap else (plan.needs[0].label if plan.needs else goal["text"])
-    result = search_mod.ask_network(get_store(), v.id, plan=plan, gap_need=need, goal=goal["text"], depth=3 if depth >= 3 else 2)
+    result = search_mod.ask_network(get_store(), v.id, plan=plan, gap_need=need, goal=goal["text"], depth=3 if depth >= 3 else 2, goal_id=gid)
     return goals_mod.save_agents(g, gid, result)
+
+
+class RateIn(BaseModel):
+    vote: str  # good, wrong or clear
+    shown_score: int = 0
+    person_id: str | None = None
+    key: str | None = None
+    name: str = ""
+    title: str = ""
+
+
+@app.post("/api/goals/{gid}/rate")
+def rate_suggestion(gid: str, body: RateIn, v: Viewer = Depends(viewer)):
+    """Thumbs up or down on a suggestion. Wrong ones leave later rankings; both teach the next one."""
+    g = graph_of(v)
+    goals_mod._goal(g, gid)
+    return smart_mod.rate(g, gid, vote=body.vote, shown_score=body.shown_score, person_id=body.person_id, key=body.key, name=body.name, title=body.title)
+
+
+class AboutIn(BaseModel):
+    about: str
+
+
+@app.get("/api/about")
+def get_about(v: Viewer = Depends(viewer)):
+    return {"about": smart_mod.about_of(graph_of(v))}
+
+
+@app.put("/api/about")
+def put_about(body: AboutIn, v: Viewer = Depends(viewer)):
+    """Who you are and what you want. Private to your graph; the planner and ranking read it."""
+    return {"about": smart_mod.set_about(graph_of(v), body.about)}
 
 
 @app.post("/api/goals/{gid}/reopen")

@@ -105,6 +105,18 @@ class Scores(BaseModel):
     scores: list[Score]
 
 
+class Verdict(BaseModel):
+    person_id: str
+    name: str | None = Field(default=None, description="The person's name, copied exactly from the input.")
+    keep: bool = Field(description="True only if the reason is true to the facts and the person's own role fits the goal.")
+    score: int = Field(description="0-100, the corrected score.")
+    reason: str = Field(description="One sentence, corrected if needed, claiming nothing beyond the facts.")
+
+
+class Verdicts(BaseModel):
+    verdicts: list[Verdict]
+
+
 class RoleQuery(BaseModel):
     label: str = Field(description="The role restated in a few words, e.g. 'Software development engineer'.")
     phrases: list[str] = Field(
@@ -170,6 +182,19 @@ Rules:
   whether the company hires remotely), say it is unknown in the reason and score 40 or below.
 - A fact that contradicts the goal (for example a note that the company is office-only) means a low score, whatever
   you believe about the company.
+"""
+
+VERIFY_INSTRUCTIONS = """You check a ranking of people from the user's network before it is shown to them.
+For each candidate you get their title, the facts about them (web results carry their site), and a proposed score and
+reason. The goal may include ABOUT ME and the user's feedback on earlier suggestions.
+
+Rules:
+- keep=false if the person's own role does not fit the goal and what ABOUT ME says the user wants, or if the reason
+  depends on something the facts do not say.
+- Fix the reason when it overstates: it may only say what the title and facts support, and should name the source
+  of any company claim. No "likely" or "probably".
+- The corrected score should not exceed the proposed score unless the facts are strong and first-hand.
+- Copy each id and name exactly. Return a verdict for every candidate.
 """
 
 ROLE_INSTRUCTIONS = """You expand a short people search, typed by someone looking through their network, into job-title phrases.
@@ -387,6 +412,9 @@ class HeuristicModel:
         title = "Met " + ", ".join(names[:2]) if names else (sentences[0][:48] if sentences else "Memo")
         return MemoExtraction(title=title, people=[people[c] for c in order], facts=facts, ties=ties)
 
+    def verify(self, goal: str, people: list[dict]):
+        return None  # no second opinion offline
+
     def expand_role(self, query: str) -> RoleQuery:
         label = re.sub(r"\s+", " ", query.strip())
         return RoleQuery(label=label, phrases=[label.lower()] if label else [])
@@ -602,6 +630,26 @@ class HostedModel:
         with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as pool:
             results = list(pool.map(score, chunks))
         return Scores(scores=[s for r in results for s in r])
+
+    def verify(self, goal: str, people: list[dict]) -> list[Verdict] | None:
+        """A second, separate pass over the top candidates. None if the check could not run."""
+        if not people:
+            return []
+        short = {f"p{i + 1}": p for i, p in enumerate(people)}
+        payload = json.dumps({"goal": goal, "candidates": [{**p, "id": k} for k, p in short.items()]}, ensure_ascii=False)
+        try:
+            raw = self._parse(VERIFY_INSTRUCTIONS, payload, Verdicts).verdicts
+        except Exception as exc:
+            log.warning("verify failed, showing unverified ranking: %s: %s", type(exc).__name__, exc)
+            return None
+        out = []
+        for v in raw:
+            person = short.get(v.person_id.strip())
+            if v.name and person and not same_person(v.name, person["name"]):
+                person = next((p for p in people if same_person(v.name, p["name"])), None)
+            if person:
+                out.append(v.model_copy(update={"person_id": person["id"]}))
+        return out
 
     def embed(self, texts: list[str]) -> list[list[float]] | None:  # pragma: no cover
         return None

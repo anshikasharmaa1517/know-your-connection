@@ -36,6 +36,14 @@ class GoalError(ValueError):
     pass
 
 
+def _with_about(g: Graph, text: str) -> str:
+    """The planner reads who you are too, so 'internship' means the right kind of internship."""
+    from . import smart
+
+    about = smart.about_of(g)
+    return f"{text}\nABOUT ME: {about}" if about else text
+
+
 def with_company_question(plan: GoalPlan, text: str) -> GoalPlan:
     """Some goals always turn on a company fact, whatever the planner said."""
     if not (plan.company_question or "").strip():
@@ -68,7 +76,8 @@ def create_goal(g: Graph, text: str) -> dict:
     same = one(g, "MATCH (goal:Goal {status:'open'}) WHERE toLower(goal.text) = toLower($t) RETURN goal.id AS id", {"t": text})
     if same:  # the same goal again: open the one you already have
         return get_goal(g, same["id"])
-    plan = with_company_question(get_model().plan_goal(text), text)
+    plan = with_company_question(get_model().plan_goal(_with_about(g, text)), text)
+    plan.summary = plan.summary if plan.summary and len(plan.summary) < 200 else text
     gid = new_id()
     run(
         g,
@@ -92,7 +101,8 @@ def update_goal(g: Graph, gid: str, text: str) -> dict:
     goal = _goal(g, gid)
     if goal["status"] != "open":
         raise GoalError("goal is closed")
-    plan = with_company_question(get_model().plan_goal(text), text)
+    plan = with_company_question(get_model().plan_goal(_with_about(g, text)), text)
+    plan.summary = plan.summary if plan.summary and len(plan.summary) < 200 else text
     run(
         g,
         "MATCH (goal:Goal {id:$id}) SET goal.text = $text, goal.summary = $summary, goal.needs = $needs, "
@@ -157,7 +167,7 @@ def _pool(g: Graph) -> dict[str, dict]:
         g,
         "MATCH (:Me)-[k:KNOWS]->(p:Person) "
         "RETURN p.id AS id, p.name AS name, p.headline AS headline, p.company AS company, "
-        "p.position AS position, p.linkedin_url AS url, k.strength AS strength",
+        "p.position AS position, p.linkedin_url AS url, k.strength AS strength, k.since AS since",
     )
     pool = {d["id"]: {**d, "tie": "direct", "via_id": None, "via_name": None} for d in direct}
     second = rows(
@@ -351,15 +361,45 @@ def role_need(plan: GoalPlan, person: dict, label: str) -> str | None:
     return None
 
 
-def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False):
-    """Score people in this graph against a plan. Returns (pool, shortlist, ordered, model_name)
-    where ordered is [(person_id, {score, reason, need, evidence})] best first."""
+def _since_ms(since) -> int | None:
+    from datetime import datetime
+
+    try:
+        return int(datetime.fromisoformat(str(since)[:10]).timestamp() * 1000) if since else None
+    except ValueError:
+        return None
+
+
+VERIFY_TOP = 12
+
+
+def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False, goal_id: str | None = None):
+    """Rank people in this graph against a plan, in steps:
+    1. leave out people you marked wrong for this goal,
+    2. keep only people whose own title, notes or status fit a need (role filter),
+    3. check their companies on the web when the goal turns on a company fact,
+    4. score with the model, which also sees ABOUT ME and your feedback as examples,
+    5. add graph signals (closeness, notes, recency, your thumbs up),
+    6. have the model verify the top results against the evidence before they are shown.
+    Returns (pool, shortlist, ordered, model_name); ordered is [(person_id, {score, reason, need, evidence, web})]."""
+    from . import smart
+
     settings = get_settings()
+    fb = smart.feedback(g, goal_id) if goal_id else {"own": {}}
+    votes = fb["own"]
+    goal_text = smart.context(g, goal_id, text)
     pool = _pool(g)
     if direct_only:
         pool = {k: v for k, v in pool.items() if v["tie"] == "direct"}
+    for pid, vote in votes.items():
+        if vote == "wrong":
+            pool.pop(pid, None)
     shortlist = _shortlist(g, plan, pool, settings.rank_pool)
-    web_on = attach_web_facts(plan, [pool[pid] for pid in shortlist])
+    for pid, vote in votes.items():  # people you liked always get looked at again
+        if vote == "good" and pid in pool and pid not in shortlist:
+            shortlist.append(pid)
+    shortlist = [pid for pid in shortlist if role_need(plan, pool[pid], "") is not None]
+    attach_web_facts(plan, [pool[pid] for pid in shortlist])
     payload = [
         {
             "id": pid,
@@ -372,7 +412,7 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
         for pid in shortlist
     ]
     model = get_model()
-    scores = model.score_people(text, plan, payload).scores if payload else []
+    scores = model.score_people(goal_text, plan, payload).scores if payload else []
 
     kept: dict[str, dict] = {}
     for s in scores:
@@ -389,16 +429,48 @@ def score_against(g: Graph, plan: GoalPlan, text: str, direct_only: bool = False
         need = role_need(plan, person, match_need(s.need, plan))
         if need is None:
             continue
+        person["since_ms"] = _since_ms(person.get("since"))
+        score = max(0, min(100, score + smart.own_bonus(person, votes.get(s.person_id))))
         web_cited = [{k: f[k] for k in ("id", "text", "url")} for f in person["facts"] if f.get("kind") == "web" and f["id"] in evidence]
         backed = any(e != "profile" for e in evidence)  # a web source, their status, or your note
-        if (plan.company_question or "").strip() and not backed:
-            # The goal turns on a company fact and no web source backed it: unknown, so it cannot rank high.
+        if (plan.company_question or "").strip() and not backed and votes.get(s.person_id) != "good":
+            # The goal turns on a company fact and nothing backed it: unknown, so it cannot rank high.
             score = min(score, 40)
             if score < settings.relevance_floor:
                 continue
         if s.person_id not in kept or kept[s.person_id]["score"] < score:
             kept[s.person_id] = {"score": score, "reason": s.reason.strip(), "need": need, "evidence": evidence, "web": web_cited}
     ordered = sorted(kept.items(), key=lambda kv: kv[1]["score"], reverse=True)
+
+    # A second, separate pass over what would be shown first.
+    top = ordered[:VERIFY_TOP]
+    verdicts = model.verify(
+        goal_text,
+        [
+            {
+                "id": pid,
+                "name": pool[pid]["name"],
+                "headline": pool[pid].get("headline") or "",
+                "facts": [f["text"] for f in pool[pid]["facts"]][:6],
+                "score": r["score"],
+                "reason": r["reason"],
+            }
+            for pid, r in top
+        ],
+    ) if top else None
+    if verdicts is not None:
+        by_id = {v.person_id: v for v in verdicts}
+        for pid, r in top:
+            v = by_id.get(pid)
+            if v is None:
+                continue  # no verdict: leave as scored
+            if not v.keep and votes.get(pid) != "good":
+                kept.pop(pid, None)
+                continue
+            r["score"] = max(0, min(r["score"] + 5, int(v.score)))
+            if v.reason.strip():
+                r["reason"] = v.reason.strip()
+        ordered = sorted(kept.items(), key=lambda kv: kv[1]["score"], reverse=True)
     return pool, shortlist, ordered, model.name
 
 
@@ -406,7 +478,7 @@ def rank(g: Graph, gid: str) -> dict:
     settings = get_settings()
     goal = _goal(g, gid)
     plan = _plan_from(goal)
-    pool, shortlist, ordered, model_name = score_against(g, plan, goal["text"])
+    pool, shortlist, ordered, model_name = score_against(g, plan, goal["text"], goal_id=gid)
 
     _clear_ranking(g, gid)
     # One write for the whole ranking: FalkorDB may be far from the app server, so round trips add up.
@@ -543,6 +615,8 @@ def get_goal(g: Graph, gid: str) -> dict:
         | {"agents": _load_agents(goal.get("agents"))}
         | {"needs": json.loads(goal["needs"])},
         "ranking": ranking,
+        "votes": _votes(g, gid),
+        "quality": _quality(g, gid),
         "gaps": open_gaps(_plan_from(goal), ranking, [x["gap"] | {"agents": _load_agents(x["gap"].get("agents"))} for x in gaps]),
     }
 
@@ -568,3 +642,16 @@ def save_agents(g: Graph, gid: str, result: dict, gap_id: str | None = None) -> 
     if gap_id:
         run(g, "MATCH (:Goal {id:$gid})-[:HAS_GAP]->(gap:Gap {id:$id}) SET gap.agents = $j", {"gid": gid, "id": gap_id, "j": blob})
     return result
+
+
+def _votes(g: Graph, gid: str) -> dict:
+    from . import smart
+
+    fb = smart.feedback(g, gid)
+    return {**fb["own"], **fb["friends"]}
+
+
+def _quality(g: Graph, gid: str) -> dict:
+    from . import smart
+
+    return smart.quality(g, gid)

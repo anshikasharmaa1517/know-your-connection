@@ -2041,3 +2041,68 @@ mark {
   background: var(--keep-soft);
   color: var(--ink);
 }
+
+/* Feedback and about you ------------------------------------------------------ */
+
+.rate {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.rate-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.rate-compact .rate-btn {
+  padding: 4px 6px;
+}
+
+.rate-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.rate-btn.on {
+  background: var(--keep-soft);
+  border-color: var(--keep);
+  color: var(--keep);
+}
+
+.rate-btn.wrong:hover {
+  border-color: var(--skip);
+  color: var(--skip);
+}
+
+.accuracy {
+  margin: 0;
+  color: var(--keep);
+  font-weight: 700;
+}
+
+.about-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin: -4px 0 4px;
+}
+
+.about-line .grow {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

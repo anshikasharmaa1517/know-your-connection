@@ -29,6 +29,10 @@ FalkorDB is the only datastore. Everything is Cypher.
 | Degree search | `search.py` runs one Cypher query per graph: `(:Me)-[:KNOWS]->(p)` filtered by role phrases for 1st degree, the same in each friend's graph plus `(:Me)-[:KNOWS]->(via)-[:KNOWS]-(p)` memo ties for 2nd, and friends-of-friends (from `FRIEND` edges in the shared graph) for 3rd. Results are de-duplicated by LinkedIn URL or name, and the lowest degree wins. "SDE" expands to title phrases (SDE II, software engineer, backend developer, member of technical staff); unknown roles are expanded by the model. |
 | Status lines | Each account can write one line about itself ("Hiring SDE interns at Confluent") and link its LinkedIn profile. The status attaches to that person wherever they sit in someone's network, matched by LinkedIn URL, so Find surfaces them for "hiring interns" and goal ranking treats it as first-hand evidence. Same reach as Find: friends and their friends, and off when search is off. |
 | Web checks | When a goal turns on a company fact ("remote job": remote work policy), the planner names it, the top candidates' companies are searched on the web in parallel, and the snippets go to the model as evidence it must cite. Results are cached per company in the shared graph as `(:WebCheck)` nodes for a week. A ranking that rests on a company fact without a web source is capped as unknown. Set `TAVILY_API_KEY` (or `BRAVE_API_KEY`). |
+| Feedback | Good fit and Wrong on each suggestion are stored as `(:Person)-[:RATED {vote, shown_score, at}]->(:Goal)` edges (friends' people as votes on the goal). Wrong ones leave later rankings, and the next ranking sees both lists as examples, so it learns what you mean by "internship". |
+| About you | One private line on `(:Me)` (role, skills, location, what you want). The planner and the scorer read it; no other account can. |
+| Staged ranking | Shortlist from the graph and vector index, check the role fits, attach status lines and web facts, score with the model, then a second verify pass over the top 12 that drops anyone whose reason does not hold up. Graph signals the model weighs badly (close tie, notes you wrote, how many friends connect you, distance) nudge the score. |
+| Accuracy | Each goal shows the share of strong suggestions you rated as right, measured on the scores you actually saw. |
 | Receipts | Every `Person` and `Fact` hangs off a `Source` node (LinkedIn import, memo, or intro card). Ranking evidence must be a real `Fact` id or the person's profile, or it is dropped. Deleting a source removes what only it vouched for. |
 
 ```mermaid
@@ -128,7 +132,8 @@ Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis:/
 5. Open the account menu, add a second account ("Bhavya"), import the **Second sample set**, and add each other as friends by handle (Friends is in the same menu).
 6. Back as the first account, add the goal "SDE role at a product startup". If it shows "No warm path", tap **Ask your network**: Bhavya's agent searches her graph and lists the software engineers she knows, each with a score and a reason. No form, no approval.
 7. Find: search "SDE". Your own SDEs are 1st degree, Bhavya's are 2nd degree. Press **Try Pro** to walk 3rd degree through a friend's friend.
-8. Optional: open FalkorDB Browser and show that each account is its own graph.
+8. Goals: write a line in **About you**, mark one suggestion Good fit and one Wrong, then **Re-rank**. The wrong one is gone and the accuracy line updates.
+9. Optional: open FalkorDB Browser and show that each account is its own graph.
 
 ## What we say about privacy, and what we don't
 
@@ -145,7 +150,9 @@ backend/app/
   imports.py     candidates, swipe decisions, undo, bulk, deck ordering
   capture.py     memo to people, facts, intents, promises, ties (API only; the app uses per-person notes)
   goals.py       goal planning, two-hop ranking with receipts, gap finding
-  search.py      Find: role search by degree across your graph and friends' graphs
+  search.py      Find: role search by degree across your graph and friends' graphs, and friends' agents
+  smart.py       about you, feedback edges, graph signals, accuracy
+  web.py         company checks on the web (Tavily, Brave or DuckDuckGo), cached in the shared graph
   exchange.py    PostRequest, Answer, AskForIntro, Approve, OptIn, Reveal
   network.py     people, sources, deletion with provenance, embeddings
   llm.py         AWS Bedrock (forced tool use) or OpenAI (structured outputs), plus offline heuristics

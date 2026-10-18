@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Pager, Spinner, usePage, useToast } from '../components/ui'
+import { Rate } from '../components/Rate'
 import { PersonSheet } from '../components/PersonSheet'
 import { NetworkMap, type AgentRun } from '../components/NetworkMap'
 import type { Tab } from '../App'
@@ -28,6 +29,8 @@ type GoalDetail = {
   goal: { id: string; text: string; summary: string; status: string; needs: { label: string; description: string; keywords: string[] }[]; pool: number; shortlist: number; ranked_at: number; agents?: AgentRun | null }
   ranking: Ranked[]
   gaps: Gap[]
+  votes?: Record<string, string>
+  quality?: { rated: number; strong_rated: number; strong_right: number; accuracy: number | null; weak_but_good: number }
 }
 
 export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) {
@@ -87,6 +90,26 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
     }
   }
 
+  const rateOwn = async (r: Ranked, vote: 'good' | 'wrong' | 'clear') => {
+    if (!detail) return
+    try {
+      const quality = await api(`/api/goals/${detail.goal.id}/rate`, {
+        body: { vote, person_id: r.person.id, shown_score: r.score },
+      })
+      setDetail((d) => {
+        if (!d) return d
+        const votes = { ...(d.votes ?? {}) }
+        if (vote === 'clear') delete votes[r.person.id]
+        else votes[r.person.id] = vote
+        const ranking = vote === 'wrong' ? d.ranking.filter((x) => x.person.id !== r.person.id) : d.ranking
+        return { ...d, votes, quality, ranking }
+      })
+      if (vote === 'wrong') toast(`${r.person.name.split(' ')[0]} removed. The next re-rank learns from it.`)
+    } catch (e: any) {
+      toast(e.message)
+    }
+  }
+
   const closeGoal = async () => {
     if (!detail) return
     setBusy(true)
@@ -125,6 +148,8 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
         <h1>Goals</h1>
         <p className="muted">Say what you're working toward and your network re-ranks around it.</p>
       </div>
+
+      <AboutYou />
 
       <form
         className={goals && goals.length > 0 ? 'compact-form' : 'stack'}
@@ -235,6 +260,14 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                     <p className="tiny faint">
                       Looked at {detail.goal.pool} people{detail.goal.ranked_at ? `, ranked ${formatDate(detail.goal.ranked_at)}` : ''}
                     </p>
+                    {detail.quality && detail.quality.rated > 0 && (
+                      <p className="small accuracy">
+                        {detail.quality.accuracy !== null
+                          ? `Accuracy on your feedback: ${detail.quality.accuracy}% of strong suggestions were right (${detail.quality.strong_right} of ${detail.quality.strong_rated})`
+                          : `${detail.quality.rated} rated so far`}
+                        {detail.quality.weak_but_good > 0 ? `. ${detail.quality.weak_but_good} you liked were ranked weak.` : '.'}
+                      </p>
+                    )}
                     <div className="row row-wrap">
                       <button className="btn btn-quiet btn-small" onClick={() => setEditing(true)} disabled={busy}>
                         Change goal
@@ -334,6 +367,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                           )}
                         </div>
                         <p>{r.reason}</p>
+                        <Rate vote={detail.votes?.[r.person.id]} onVote={(v) => rateOwn(r, v)} />
                       </div>
                     </li>
                   ))}
@@ -393,6 +427,7 @@ type AgentHit = {
   need: string
   for_gap: boolean
   sources?: { text: string; url: string }[]
+  vote?: string | null
 }
 type AgentResult = {
   need: string
@@ -505,6 +540,23 @@ function GapAsk({
   const summary =
     result.people.length === 0 ? "Nobody in your friends' networks fits this yet." : `${finders(result.people)}.`
 
+  const rateFriend = async (h: AgentHit, vote: 'good' | 'wrong' | 'clear') => {
+    try {
+      await api(`/api/goals/${goalId}/rate`, {
+        body: { vote, key: h.key, shown_score: h.score, name: h.name, title: [h.position, h.company].filter(Boolean).join(' at ') || h.headline },
+      })
+      const people =
+        vote === 'wrong'
+          ? result.people.filter((p) => p.key !== h.key)
+          : result.people.map((p) => (p.key === h.key ? { ...p, vote: vote === 'clear' ? null : vote } : p))
+      const next = { ...result, people }
+      setResult(next)
+      onResult(next as unknown as AgentRun)
+    } catch (e: any) {
+      toast(e.message)
+    }
+  }
+
   const row = (h: AgentHit, showNeed: boolean) => {
     return (
       <div className="person-row hit" key={h.key}>
@@ -528,6 +580,7 @@ function GapAsk({
           ))}
         </span>
         <span className="hit-actions">
+          <Rate compact vote={h.vote} onVote={(v) => rateFriend(h, v)} />
           <Meter value={h.score} size={36} label={String(h.score)} tone={h.score >= 70 ? 'keep' : 'ink'} />
           {h.url && (
             <a className="btn btn-ghost btn-small" href={h.url} target="_blank" rel="noreferrer" aria-label={`${h.name} on LinkedIn`}>
@@ -594,4 +647,70 @@ function lookingFor(needs: { label: string; keywords: string[] }[]): string[] {
     if (rest[i]) out.push(rest[i])
   })
   return [...out, ...rest.slice(labels.length)].slice(0, 10)
+}
+
+
+/** Who you are, so "internship" means the right internship. Private to your own graph. */
+function AboutYou() {
+  const [about, setAbout] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const [editing, setEditing] = useState(false)
+  const toast = useToast()
+  useEffect(() => {
+    api<{ about: string }>('/api/about')
+      .then((r) => {
+        setAbout(r.about)
+        setDraft(r.about)
+        setEditing(!r.about)
+      })
+      .catch(() => setAbout(''))
+  }, [])
+  if (about === null) return null
+  const save = async () => {
+    try {
+      const r = await api<{ about: string }>('/api/about', { method: 'PUT', body: { about: draft } })
+      setAbout(r.about)
+      setEditing(false)
+      toast('Saved. Re-rank a goal to use it.')
+    } catch (e: any) {
+      toast(e.message)
+    }
+  }
+  if (!editing) {
+    return (
+      <div className="about-line small">
+        <span className="muted">About you:</span> <span className="grow">{about}</span>
+        <button className="link-button small" onClick={() => setEditing(true)}>
+          Edit
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="panel stack about-card" style={{ gap: 8 }}>
+      <div className="section-title">About you</div>
+      <textarea
+        className="textarea"
+        rows={2}
+        maxLength={600}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="SDE student in Bangalore, Python and Go, looking for a remote or UK internship for summer 2027"
+        aria-label="About you"
+      />
+      <p className="tiny faint" style={{ margin: 0 }}>
+        Private. Rankings use it to judge who actually fits you: role, skills, location, timing.
+      </p>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        {about && (
+          <button className="btn btn-ghost btn-small" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        )}
+        <button className="btn btn-primary btn-small" onClick={save} disabled={draft.trim() === about}>
+          Save
+        </button>
+      </div>
+    </div>
+  )
 }

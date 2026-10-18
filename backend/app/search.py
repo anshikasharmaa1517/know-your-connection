@@ -472,7 +472,7 @@ def _need_phrases(need) -> tuple[list[str], set[str]]:
     return out, role
 
 
-def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth: int = 2) -> dict:
+def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth: int = 2, goal_id: str | None = None) -> dict:
     """Friends' agents search their own graphs for everything a goal needs, starting with
     the gap that was clicked. People for that gap come first; anyone else in their
     networks who helps with the goal is listed after."""
@@ -529,6 +529,13 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
             -len(r["matched"]),
         )
     )
+    from . import smart
+
+    own_graph = store.user(uid)
+    votes = smart.feedback(own_graph, goal_id)["friends"] if goal_id else {}
+    goal = smart.context(own_graph, goal_id, goal)  # the goal plus ABOUT ME and your feedback
+    candidates = [r for r in candidates if votes.get(r["key"]) != "wrong"]
+    candidates.sort(key=lambda r: votes.get(r["key"]) != "good")  # people you liked are looked at again first
     candidates = candidates[:AGENT_POOL]
     if not candidates:
         return result
@@ -561,15 +568,37 @@ def ask_network(store: Store, uid: str, *, plan, gap_need: str, goal: str, depth
         if need is None:
             continue
         cited = [{"text": f["text"], "url": f["url"]} for f in r.get("facts", []) if f.get("kind") == "web" and f["id"] in s.evidence]
-        score = max(0, min(100, int(s.score)))
+        score = max(0, min(100, int(s.score) + smart.friend_bonus(r, votes.get(r["key"]))))
         backed = any(f["id"] in s.evidence for f in r.get("facts", []))
-        if (plan.company_question or "").strip() and not backed:
+        if (plan.company_question or "").strip() and not backed and votes.get(r["key"]) != "good":
             score = min(score, 40)
             if score < floor:
                 continue
         for_gap = bool(gap) and (need.lower() == gap.label.lower() or covers(gap, {"headline": r["headline"], "position": r["position"]}, s.reason))
         row = {k: v for k, v in r.items() if k != "facts"}
         people.append({**row, "score": score, "reason": s.reason.strip(), "need": need, "for_gap": for_gap, "sources": cited})
+    # Second pass: verify the strongest before they are shown.
+    top = sorted(people, key=lambda r: -r["score"])[:12]
+    verdicts = get_model().verify(
+        goal,
+        [{"id": r["key"], "name": r["name"], "headline": r["headline"], "facts": [x["text"] for x in r.get("sources", [])], "score": r["score"], "reason": r["reason"]} for r in top],
+    ) if top else None
+    if verdicts is not None:
+        by_id = {v.person_id: v for v in verdicts}
+        drop = set()
+        for r in top:
+            v = by_id.get(r["key"])
+            if v is None:
+                continue
+            if not v.keep and votes.get(r["key"]) != "good":
+                drop.add(r["key"])
+                continue
+            r["score"] = max(0, min(r["score"] + 5, int(v.score)))
+            if v.reason.strip():
+                r["reason"] = v.reason.strip()
+        people = [r for r in people if r["key"] not in drop]
+    for r in people:
+        r["vote"] = votes.get(r["key"])
     people.sort(key=lambda r: (not r["for_gap"], r["degree"], -r["score"]))
     result["people"] = people
     return result

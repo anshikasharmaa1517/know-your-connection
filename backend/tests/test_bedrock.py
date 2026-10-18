@@ -58,6 +58,11 @@ class FakeBedrock:
             data = json.loads(text)
             plan = llm.GoalPlan.model_validate({"summary": data["goal"], "needs": data["needs"]})
             result = self.h.score_people(data["goal"], plan, data["people"])
+        elif tool == "record_verdicts":  # the verification pass keeps everyone as scored
+            data = json.loads(text)
+            result = llm.Verdicts(verdicts=[
+                llm.Verdict(person_id=c["id"], name=c["name"], keep=True, score=c["score"], reason=c["reason"]) for c in data["candidates"]
+            ])
         else:  # pragma: no cover
             raise AssertionError(tool)
         return {
@@ -117,7 +122,7 @@ def test_ranking_and_capture_go_through_bedrock(bedrock, sample_csv):
     assert any(f["kind"] == "promise" for f in out["facts"])
 
     tools = {c["toolConfig"]["tools"][0]["toolSpec"]["name"] for c in fake.converse_calls}
-    assert tools == {"record_goal_plan", "record_scores", "record_memo_extraction"}
+    assert tools == {"record_goal_plan", "record_scores", "record_verdicts", "record_memo_extraction"}
     assert all(c["model"] == "global.anthropic.claude-haiku-5-5" for c in fake.converse_calls)
     for c in fake.converse_calls:
         assert "$ref" not in json.dumps(c["toolConfig"])
