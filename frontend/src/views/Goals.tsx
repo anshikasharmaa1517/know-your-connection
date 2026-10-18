@@ -283,17 +283,6 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
             </div>
           )}
 
-          {detail.goal.status === 'open' && (
-            <GapAsk
-              key={detail.goal.id}
-              goalId={detail.goal.id}
-              needs={(detail.gaps.length ? detail.gaps.map((g) => g.need) : detail.goal.needs.map((n) => n.label))}
-              myName={myName}
-              signal={askSignal}
-              saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
-              onResult={(r) => saveAgents(detail.goal.id, r)}
-            />
-          )}
 
           {detail.goal.status === 'open' && view === 'map' && detail.ranking.length > 0 && (
             <NetworkMap
@@ -351,6 +340,19 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
                 </ol>
               )}
             </div>
+          )}
+
+          <div id="friends-results" />
+          {detail.goal.status === 'open' && (
+            <GapAsk
+              key={detail.goal.id}
+              goalId={detail.goal.id}
+              needs={(detail.gaps.length ? detail.gaps.map((g) => g.need) : detail.goal.needs.map((n) => n.label))}
+              myName={myName}
+              signal={askSignal}
+              saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
+              onResult={(r) => saveAgents(detail.goal.id, r)}
+            />
           )}
         </section>
       )}
@@ -433,6 +435,8 @@ function GapAsk({
     first.current = signal
     setHidden(false)
     run()
+    // Results sit under your own list, so bring them into view.
+    window.setTimeout(() => document.getElementById('friends-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signal])
 
