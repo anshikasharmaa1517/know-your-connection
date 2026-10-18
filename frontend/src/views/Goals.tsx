@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, formatDate } from '../api'
 import { Avatar, Meter } from '../components/Ring'
 import { Spinner, useToast } from '../components/ui'
@@ -38,6 +38,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
   const [open, setOpen] = useState<string | null>(null)
   const [showPast, setShowPast] = useState(false)
   const [view, setView] = useState<'list' | 'map'>('list')
+  const [askSignal, setAskSignal] = useState(0)
   // Friends' agent results per goal, shared by the gap cards and the map.
   const [agents, setAgents] = useState<Record<string, AgentRun>>({})
   const saveAgents = useCallback((gid: string, r: AgentRun) => setAgents((a) => ({ ...a, [gid]: r })), [])
@@ -261,45 +262,39 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
             )}
           </div>
 
-          {detail.gaps.length > 0 && (
-            <div className="gap">
-              <h3>{detail.gaps.length === 1 ? detail.gaps[0].text : 'No warm path yet to these people'}</h3>
-              {detail.gaps.length === 1 ? (
-                <p className="small muted">{detail.gaps[0].description}</p>
-              ) : (
-                <div className="needs">
-                  {detail.gaps.map((g) => (
-                    <span className="chip" key={g.id} title={g.description}>
-                      {g.need}
-                    </span>
-                  ))}
+          {detail.goal.status === 'open' && (
+            <div className="goal-toolbar">
+              <span className="small muted">
+                {detail.ranking.length === 0
+                  ? 'No one you know fits yet'
+                  : `${detail.ranking.length} ${detail.ranking.length === 1 ? 'person fits' : 'people fit'} this goal`}
+              </span>
+              {detail.ranking.length > 0 && (
+                <div className="segmented" role="tablist" aria-label="View">
+                  <button role="tab" aria-selected={view === 'list'} onClick={() => setView('list')}>
+                    List
+                  </button>
+                  <button role="tab" aria-selected={view === 'map'} onClick={() => setView('map')}>
+                    Map
+                  </button>
                 </div>
               )}
-              <GapAsk
-                key={detail.goal.id}
-                goalId={detail.goal.id}
-                needs={detail.gaps.map((g) => g.need)}
-                myName={myName}
-                saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
-                onResult={(r) => saveAgents(detail.goal.id, r)}
-              />
+              <button className="btn btn-primary btn-small ask-btn" onClick={() => setAskSignal((n) => n + 1)}>
+                Ask your network
+              </button>
             </div>
           )}
 
-          {detail.goal.status === 'open' && detail.ranking.length > 0 && (
-            <div className="spread">
-              <span className="small muted">
-                {detail.ranking.length} {detail.ranking.length === 1 ? 'person fits' : 'people fit'} this goal
-              </span>
-              <div className="segmented" role="tablist" aria-label="View">
-                <button role="tab" aria-selected={view === 'list'} onClick={() => setView('list')}>
-                  List
-                </button>
-                <button role="tab" aria-selected={view === 'map'} onClick={() => setView('map')}>
-                  Map
-                </button>
-              </div>
-            </div>
+          {detail.goal.status === 'open' && (
+            <GapAsk
+              key={detail.goal.id}
+              goalId={detail.goal.id}
+              needs={(detail.gaps.length ? detail.gaps.map((g) => g.need) : detail.goal.needs.map((n) => n.label))}
+              myName={myName}
+              signal={askSignal}
+              saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
+              onResult={(r) => saveAgents(detail.goal.id, r)}
+            />
           )}
 
           {detail.goal.status === 'open' && view === 'map' && detail.ranking.length > 0 && (
@@ -402,12 +397,14 @@ function GapAsk({
   goalId,
   needs,
   saved,
+  signal,
   onResult,
 }: {
   goalId: string
   needs: string[]
   myName: string
   saved: AgentResult | null
+  signal: number
   onResult: (r: AgentRun) => void
 }) {
   // Results from the last time you asked are kept with the goal, so they are here when you come back.
@@ -431,18 +428,22 @@ function GapAsk({
     }
   }
 
+  const [hidden, setHidden] = useState(false)
+  const first = useRef(signal)
+  useEffect(() => {
+    if (signal === first.current) return
+    first.current = signal
+    setHidden(false)
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signal])
+
   const tryPro = async () => {
     await api('/api/settings', { method: 'PATCH', body: { plan: 'pro' } })
     run(3)
   }
 
-  if (state === 'idle') {
-    return (
-      <button className="btn btn-primary" onClick={() => run()}>
-        Ask your network
-      </button>
-    )
-  }
+  if (state === 'idle' || hidden) return null
   if (state === 'running') {
     return <Scan query={needs.length === 1 ? needs[0] : `${needs.length} kinds of people`} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
   }
@@ -480,11 +481,8 @@ function GapAsk({
       .join(', ')
   }
   const summary =
-    result.people.length === 0
-      ? "Nobody in your friends' networks fits this yet."
-      : forGap.length === 0
-        ? `No one fills ${needs.length === 1 ? 'this gap' : 'these gaps'} yet, but ${finders(forGoal).replace(/ found (\d+)/g, ' found $1')} who help with this goal.`
-        : `${finders(forGap)} who fill ${needs.length === 1 ? 'this gap' : 'these gaps'}.`
+    result.people.length === 0 ? "Nobody in your friends' networks fits this yet." : `${finders(result.people)}.`
+  const ordered = [...forGap, ...forGoal]
 
   const row = (h: AgentHit, showNeed: boolean) => {
     return (
@@ -516,20 +514,13 @@ function GapAsk({
   }
 
   return (
-    <div className="stack agent-results" style={{ gap: 8 }}>
+    <div className="panel stack agent-results" style={{ gap: 8 }}>
+      <div className="section-title">From your friends' networks</div>
       <p className="small">
         <strong>{summary}</strong>
         {result.people.length > 0 && ' Only their public profile was used, never their notes.'}
       </p>
-      {forGap.map((h) => row(h, needs.length > 1))}
-      {forGoal.length > 0 && (
-        <>
-          <div className="section-title" style={{ marginTop: 6 }}>
-            Also helps with this goal
-          </div>
-          {forGoal.map((h) => row(h, true))}
-        </>
-      )}
+      {ordered.map((h) => row(h, true))}
       <div className="row row-wrap">
         {result.scanned.fof > 0 ? null : result.plan === 'pro' ? (
           result.third.networks > 0 && (
@@ -551,6 +542,9 @@ function GapAsk({
           Ask again
         </button>
         {result.at && <span className="tiny faint">Asked {formatWhen(result.at)}</span>}
+        <button className="btn btn-ghost btn-small" onClick={() => setHidden(true)}>
+          Hide
+        </button>
       </div>
     </div>
   )

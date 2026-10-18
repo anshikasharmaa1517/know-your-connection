@@ -1766,3 +1766,14 @@ mark {
   border-color: var(--keep);
   border-style: dashed;
 }
+
+.goal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.goal-toolbar .ask-btn {
+  margin-left: auto;
+}
