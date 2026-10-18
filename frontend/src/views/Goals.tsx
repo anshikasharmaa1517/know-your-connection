@@ -350,6 +350,7 @@ export function GoalsView({ myName }: { go: (t: Tab) => void; myName: string }) 
               needs={(detail.gaps.length ? detail.gaps.map((g) => g.need) : detail.goal.needs.map((n) => n.label))}
               myName={myName}
               signal={askSignal}
+              showResults={view === 'list' || detail.ranking.length === 0}
               saved={(agents[detail.goal.id] as unknown as AgentResult) ?? (detail.goal.agents as unknown as AgentResult) ?? null}
               onResult={(r) => saveAgents(detail.goal.id, r)}
             />
@@ -398,6 +399,7 @@ function GapAsk({
   needs,
   saved,
   signal,
+  showResults,
   onResult,
 }: {
   goalId: string
@@ -405,6 +407,7 @@ function GapAsk({
   myName: string
   saved: AgentResult | null
   signal: number
+  showResults: boolean
   onResult: (r: AgentRun) => void
 }) {
   // Results from the last time you asked are kept with the goal, so they are here when you come back.
@@ -446,6 +449,8 @@ function GapAsk({
   }
 
   if (state === 'idle' || hidden) return null
+  // In Map view the results are drawn on the map itself; only the scan shows here.
+  if (!showResults && state === 'done') return null
   if (state === 'running') {
     return <Scan query={needs.length === 1 ? needs[0] : `${needs.length} kinds of people`} label="Friends' agents looking for" stages={['Waking your friends\' agents', 'Each searches its own network', 'Scoring who fits']} />
   }
