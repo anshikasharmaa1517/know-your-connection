@@ -1,17 +1,23 @@
 # Connections
 
+Your network already knows who can help you. Connections finds them.
+
 A personal CRM where AI agents walk your relationship graph, built on **FalkorDB** for Graph Hacks (WeMakeDevs x FalkorDB, Oct 2026).
 
-You meet thirty new people a month and remember a third of them. LinkedIn shows connections with no context, and the friend across the table who knows exactly who you need never mentions it. Connections fixes both without scraping anyone:
+**Live:** https://know-your-connection-1.onrender.com (free tier: the first load can take a minute while the server wakes up)
 
-1. **Import.** Upload the export LinkedIn gives you of your own connections. Every row becomes a card. Nobody is added until you swipe: right to keep, up for your inner circle, left to skip.
-2. **Notes.** Open anyone from a goal or a Find result and add a one-line note ("hiring a summer intern", "wants a cofounder"). It becomes a `Fact` on that person with its own `Source`, and Find searches it, so "hiring intern" finds Priya even though her title says Investment Associate.
-3. **Aim.** Set a goal ("summer 2027 VC internship") and your network re-ranks around it, with a reason and receipts per person. Change the goal, the ranking rebuilds. Close it, the ranking disappears. Open goals also reorder the import deck so the connections that fit come first.
-4. **Find the gap.** When a goal needs a kind of person you have no path to, the app says so: "No warm path to climate-tech VC."
-5. **Find.** Type a role like "SDE", or something you noted like "hiring intern", and the app walks your graph and your friends' graphs, then lists matches by degree: people you know first, then people your friends know, with the path ("Through Bhavya"). No request or approval round trip. 3rd degree (your friends' friends) is a Pro feature because it walks many more graphs.
-6. **Ask your network.** On a gap ("No warm path to SDE"), one tap runs your friends' agents straight away: each searches its owner's FalkorDB graph for that need, the model scores the candidates from their public profile only, and you see who fits and through whom. No form, no waiting for approval. Friends of friends are a Pro option.
+You have hundreds of LinkedIn connections, but when you need something, like a remote job, you can't tell who can actually help. And the right person is often one friend away, in a network you can't see. Connections fixes both without scraping anyone:
 
-Rules enforced in code, not on a slide: your notes and memos are only ever searched by you; Find and friends' agents read a friend's graph only if that friend leaves "Friends can find my contacts" on, and only the profile a LinkedIn connection already shows (name, title, company, link) crosses over, never notes, memos or tie strength; any account can turn that off in one tap; relationships never decay and nobody gets a worth score; every suggestion has a reason, and every ranking has a receipt.
+1. **Import.** Upload the export LinkedIn gives you of your own connections (the zip or `Connections.csv`). Every row becomes a card, and nobody is added until you swipe: right to keep, up for your inner circle, left to skip.
+2. **Friends.** Add friends by handle. Once they accept, their agent can search their network for you, with no request or approval each time.
+3. **Goals.** Write a goal ("I want a remote job"). The planner works out which kinds of people would open that door, and your whole network re-ranks around it: every person gets a score and a one-line reason. When the goal depends on a company fact (does this company hire remotely?), the candidates' companies are checked on the web first, so a reason rests on evidence instead of the model's memory. Switch to **Map** for a force graph of the people who fit: drag, zoom, and hover anyone to light up the path back to you.
+4. **Ask your network.** One tap on a goal runs your friends' agents straight away. Each searches its owner's FalkorDB graph, scores the candidates from their public profile only, and lists who fits and through whom. Your own matches stay on top, friends' matches below, and the results are saved with the goal. Friends of friends are a Pro option.
+5. **It learns from you.** Mark any suggestion **Good fit** or **Wrong**. Wrong ones disappear and stay out of later rankings, and both kinds are shown to the model as examples next time. Each goal shows how accurate its strong suggestions were on your ratings. A private **About you** line in the profile menu tells the ranking your role, skills, location and what you want.
+6. **Status lines.** Anyone can write one line about themselves ("Hiring remote SDE interns") and link their LinkedIn. Wherever they appear in their friends' networks (or their friends' friends'), Find and the agents see it, so the people who are actually hiring rise to the top.
+7. **Find.** Search a role like "SDE", or something you noted like "hiring intern", across your graph and your friends' graphs. Matches come back by degree: people you know first, then people your friends know, with the path ("Through Bhavya"). 3rd degree (your friends' friends) is a Pro feature because it walks many more graphs.
+8. **Notes.** Open anyone and add a one-line note ("wants a cofounder"). Find searches it and the ranking reads it, so "hiring intern" finds Priya even though her title says Investment Associate.
+
+Rules enforced in code, not on a slide: your notes, memos, About you and ratings are only ever read for you; Find and friends' agents read a friend's graph only if that friend leaves "Friends can find my contacts" on, and only the profile a LinkedIn connection already shows (name, title, company, link) crosses over, never notes, memos or tie strength; any account can turn that off in one tap; relationships never decay and nobody gets a worth score; every suggestion has a reason, and every ranking has a receipt.
 
 **Tracks:** Agent Memory and Coordination (agents persist memory per user and coordinate through a shared graph) and Agents That Act on Connected Data (multi-hop, explainable ranking with sources).
 
@@ -46,8 +52,11 @@ graph LR
   F -- ABOUT --> P1
   S1 -. "Candidate {pending/kept/skipped}" .- C[Candidate]
   P1 -- "RELEVANT_TO {score, reason, evidence}" --> G[Goal]
+  P1 -- "RATED {vote, shown_score}" --> G
   G -- HAS_GAP --> Gap[Gap]
 ```
+
+The shared graph `connections_shared` holds `(:User)-[:FRIEND]-(:User)` with each account's status line and LinkedIn key, and `(:WebCheck)` nodes caching web results per company and question.
 
 ### LinkedIn import with swipe-to-confirm
 
@@ -91,9 +100,10 @@ Without a model key the app runs on offline keyword heuristics so every flow wor
 
 ### Model: AWS Bedrock or OpenAI
 
-The app uses whichever key it finds (or set `LLM_PROVIDER` to `bedrock`, `openai` or `offline`).
+The app uses whichever key it finds (or set `LLM_PROVIDER` to `mantle`, `bedrock`, `openai` or `offline`).
 
-- **AWS Bedrock (default if a Bedrock key is set).** Create an API key in the Bedrock console under **API keys** and set `AWS_BEARER_TOKEN_BEDROCK` plus `AWS_REGION` (the region you made the key in). The default model is Claude Haiku 5.5 through the global inference profile `global.anthropic.claude-haiku-5-5`; change it with `BEDROCK_MODEL_ID` to any Bedrock model that supports tool use. Structured output comes from forcing a single tool call whose input schema is the expected result. Embeddings use `amazon.titan-embed-text-v2:0` (set `BEDROCK_EMBED_MODEL_ID` empty to turn them off). Bedrock has no speech-to-text, so voice memos use the browser's built-in dictation. If AWS refuses the main model (for example Anthropic's one-time use-case form isn't filled in, or the AWS Marketplace subscription can't be created, which is common on Indian AISPL accounts), the app switches to Amazon Nova 2 Lite (`global.amazon.nova-2-lite-v1:0`) automatically and `/api/health/model` reports the switch. Override the list with `BEDROCK_FALLBACK_MODEL_IDS`, or set it to `none`.
+- **Amazon Bedrock Mantle (what the live demo runs).** Create an API key in the Bedrock console under **API keys** and set `AWS_BEARER_TOKEN_BEDROCK` plus `AWS_REGION` (the region you made the key in). With no `BEDROCK_MODEL_ID`, the app calls OpenAI-style models through Mantle's OpenAI-compatible API, using `MANTLE_MODEL_ID` or the best model the key can list. The demo runs `openai.gpt-oss-120b`.
+- **AWS Bedrock Converse.** Set `BEDROCK_MODEL_ID` as well (for example `global.anthropic.claude-haiku-5-5`) to use any Bedrock model that supports tool use. Structured output comes from forcing a single tool call whose input schema is the expected result. Embeddings use `amazon.titan-embed-text-v2:0` (set `BEDROCK_EMBED_MODEL_ID` empty to turn them off). Bedrock has no speech-to-text, so voice memos use the browser's built-in dictation. If AWS refuses the main model (for example Anthropic's one-time use-case form isn't filled in, or the AWS Marketplace subscription can't be created, which is common on Indian AISPL accounts), the app switches to Amazon Nova 2 Lite (`global.amazon.nova-2-lite-v1:0`) automatically and `/api/health/model` reports the switch. Override the list with `BEDROCK_FALLBACK_MODEL_IDS`, or set it to `none`.
 - **OpenAI.** Set `OPENAI_API_KEY`. Uses structured outputs, `text-embedding-3-small`, and server-side transcription for voice memos.
 
 `GET /api/health/model` makes one real model call and reports the error code with a hint if the key, region or model ID is wrong. Voice memos need the key.
@@ -116,28 +126,31 @@ The `Dockerfile` builds one container that serves the API and the web app. Any c
 | `FALKORDB_PASSWORD` | your instance password, any characters |
 | `AWS_BEARER_TOKEN_BEDROCK` | your Bedrock API key |
 | `AWS_REGION` | the region the key was created in, e.g. `us-east-1` |
-| `BEDROCK_MODEL_ID` | optional, default `global.anthropic.claude-haiku-5-5` |
+| `MANTLE_MODEL_ID` | optional, e.g. `openai.gpt-oss-120b` |
+| `BEDROCK_MODEL_ID` | optional; set it to use Bedrock Converse instead of Mantle |
+| `TAVILY_API_KEY` | web checks for company facts (free tier is enough); `BRAVE_API_KEY` also works |
 | `OPENAI_API_KEY` | instead of Bedrock: `sk-...` |
 | `CONNECTIONS_PUBLIC_URL` | `https://connections.example.com` (used in opt-in links) |
 | `PORT` | set by most hosts; defaults to 8000 |
 
 Instead of the four `FALKORDB_*` fields you can set one `FALKORDB_URL` (`redis://falkordb:<password>@<host>:<port>`). Set the health check path to `/api/health`. If it fails, the server log names the FalkorDB host it tried (password hidden) and the reason: a `ConnectionError` means a wrong host or port, or the instance is stopped; an `AuthenticationError` means a wrong username or password.
 
-## Demo script (about 3 minutes)
+## Demo script (about 2.5 minutes)
 
-1. Create an account. On Import, choose **Try it with sample connections** (fictional people) or upload a real export.
-2. Swipe a few: right, up, left. Press Z to undo one. Point out that nothing was added before the swipe.
-3. Goals: add "Summer 2027 VC internship". Show the gap if nothing fits yet, then go back to Import: the investors now lead the deck with the matching words underlined. Keep a few and press **Re-rank**. Each person has a reason and a receipt pointing at the LinkedIn export.
-4. Notes: in Find, search "investor", open Priya Raman and add "Wants to hire a summer intern". In Find, tap **Hiring intern**: Priya comes up first with your note highlighted, although her title says Investment Associate.
-5. Open the account menu, add a second account ("Bhavya"), import the **Second sample set**, and add each other as friends by handle (Friends is in the same menu).
-6. Back as the first account, add the goal "SDE role at a product startup". If it shows "No warm path", tap **Ask your network**: Bhavya's agent searches her graph and lists the software engineers she knows, each with a score and a reason. No form, no approval.
-7. Find: search "SDE". Your own SDEs are 1st degree, Bhavya's are 2nd degree. Press **Try Pro** to walk 3rd degree through a friend's friend.
-8. Tap your profile icon and write a line in **About you**. On Goals, mark one suggestion Good fit and one Wrong, then **Re-rank**. The wrong one is gone and the accuracy line updates.
-9. Optional: open FalkorDB Browser and show that each account is its own graph.
+Before recording: open the live app once so it is awake, and make sure the two demo accounts are already friends.
+
+1. **Import.** Upload your LinkedIn `Connections.csv` (or choose **Try it with sample connections**) and swipe a few. Nothing is added before the swipe.
+2. **Friends.** Show the friends list and adding a friend by handle.
+3. **Goal.** Add "I want a remote job". Show the kinds of people it plans for, then the ranked list: each person has a score and a one-line reason, backed by a web check on whether their company hires remotely. Open one person's LinkedIn.
+4. **Feedback.** Mark a strong match **Good fit** and a weak one **Wrong**. The wrong one disappears and the accuracy line updates. The next **Re-rank** learns from both.
+5. **Ask your network.** Tap it: your friends' agents search their graphs and list the people who fit, with the path to each.
+6. **Map.** Switch to Map, drag a node, and hover a friend's contact to light up the path through your friend.
+7. **Status and Find.** Show **Your status** on Friends ("Hiring remote SDE interns"), then search "hiring" or "SDE" in Find: results come back 1st degree, then 2nd degree, with statuses and your notes highlighted.
+8. Optional: open FalkorDB Browser and show that each account is its own graph.
 
 ## What we say about privacy, and what we don't
 
-Per-user graphs isolate each network by construction. Find and friends' agents are the deliberate exception: friends who leave the search setting on let their friends (and, on Pro, their friends' friends) see the LinkedIn-level profile of their contacts, never notes or memos. That is the claim. The app does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Text sent to the model for scoring follows that provider's API terms.
+Per-user graphs isolate each network by construction. Find and friends' agents are the deliberate exception: friends who leave the search setting on let their friends (and, on Pro, their friends' friends) see the LinkedIn-level profile of their contacts, never notes, memos, About you or ratings. Status lines are the one thing an account publishes on purpose, and they reach the same people. That is the claim. The app does not encrypt data at rest, does not protect anything from whoever operates the server, and the hackathon login is a bearer token without passwords. Text sent to the model for scoring follows that provider's API terms.
 
 ## Layout
 
@@ -149,17 +162,18 @@ backend/app/
   linkedin.py    LinkedIn export parser
   imports.py     candidates, swipe decisions, undo, bulk, deck ordering
   capture.py     memo to people, facts, intents, promises, ties (API only; the app uses per-person notes)
-  goals.py       goal planning, two-hop ranking with receipts, gap finding
+  goals.py       goal planning, staged ranking (shortlist, role check, web facts, score, verify), receipts
   search.py      Find: role search by degree across your graph and friends' graphs, and friends' agents
   smart.py       about you, feedback edges, graph signals, accuracy
   web.py         company checks on the web (Tavily, Brave or DuckDuckGo), cached in the shared graph
   exchange.py    PostRequest, Answer, AskForIntro, Approve, OptIn, Reveal
   network.py     people, sources, deletion with provenance, embeddings
   llm.py         AWS Bedrock (forced tool use) or OpenAI (structured outputs), plus offline heuristics
-frontend/src/    React app (swipe deck, goals with list and map, find, person cards with notes, ask, opt-in page)
+frontend/src/    React app (swipe import, goals with list and d3-force map, ask your network, feedback, find,
+                 friends and status, person cards with notes, about you in the profile menu)
 samples/         a fictional Connections.csv for demos and tests
 ```
 
 ## Roadmap
 
-Live-linked cards, friend-of-friend relays, an in-person QR handshake, an opt-in card directory, importing LinkedIn messages as context, public-web enrichment with a URL on every fact, and encryption at rest.
+Live-linked cards, an in-person QR handshake, an opt-in card directory, importing LinkedIn messages as context, web checks on every fact (not only company questions), a stronger scoring model, and encryption at rest.
